@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:homesync/screens/alldevices_screen.dart';
+import 'package:homesync/screens/bar_chart_widget.dart';
+import 'package:homesync/screens/electrical_usage_screen.dart';
 import 'package:homesync/screens/homepage_screen.dart';
 import 'package:homesync/screens/notification_screen.dart';
 import 'package:homesync/screens/settings_screen.dart';
@@ -29,10 +30,12 @@ class MyApp extends StatelessWidget {
         '/signup': (context) => SignUpScreen(),
         '/login': (context) => LoginScreen(),
         '/forgot-password': (context) => ForgotPasswordScreen(),
-        '/homepage': (context) => HomePage(),
+        '/homepage': (context) => HomeScreen(),
         '/settings': (context) => SettingsPage(),
-        '/alldevices': (context) => AllDevicesPage(),
+        '/electrical_usage': (context) => ElectricalUsageScreen(),
         '/notification': (context) => NotificationPage(),
+        '/barchartwidget': (context) => BarChartWidget(),
+
       },
     );
   }
