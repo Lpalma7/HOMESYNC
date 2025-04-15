@@ -1,19 +1,79 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
-class AddDeviceScreen extends StatefulWidget {
-  @override
-  _AddDeviceScreenState createState() => _AddDeviceScreenState();
-} 
+class Device {
+  final String id;
+  final String name;
+  final String type;
+  final double kwh;
+  final String room;
+  final IconData icon;
+  final String? appliance;
+  final TimeOfDay? startTime;
+  final TimeOfDay? endTime;
+  final Map<String, bool> selectedDays;
 
-class _AddDeviceScreenState extends State<AddDeviceScreen> {
+  Device({
+    required this.id,
+    required this.name,
+    required this.type,
+    required this.kwh,
+    required this.room,
+    required this.icon,
+    this.appliance,
+    this.startTime,
+    this.endTime,
+    required this.selectedDays,
+  });
+
+  Device copyWith({
+    String? name,
+    String? type,
+    double? kwh,
+    String? room,
+    IconData? icon,
+    String? appliance,
+    TimeOfDay? startTime,
+    TimeOfDay? endTime,
+    Map<String, bool>? selectedDays,
+  }) {
+    return Device(
+      id: this.id,
+      name: name ?? this.name,
+      type: type ?? this.type,
+      kwh: kwh ?? this.kwh,
+      room: room ?? this.room,
+      icon: icon ?? this.icon,
+      appliance: appliance ?? this.appliance,
+      startTime: startTime ?? this.startTime,
+      endTime: endTime ?? this.endTime,
+      selectedDays: selectedDays ?? this.selectedDays,
+    );
+  }
+}
+
+class Schedule extends StatefulWidget {
+  const Schedule({super.key});
+
+  @override
+  State<Schedule> createState() => ScheduleState();
+}
+
+class ScheduleState extends State<Schedule> {
   final TextEditingController deviceNameController = TextEditingController();
   final TextEditingController kwhController = TextEditingController();
   final TextEditingController roomController = TextEditingController();
+  final TextEditingController applianceController = TextEditingController(); // Added appliance 
 
   String deviceType = 'Light';
   String? selectedRoom;
   List<String> rooms = ['Living Room', 'Kitchen','Bedroom','Dining Area'];
+  Map<String, IconData> roomIcons = { // Added room icons 
+    'Living Room': Icons.living,
+    'Kitchen': Icons.kitchen,
+    'Bedroom': Icons.bed,
+    'Dining Area': Icons.dining,
+  };
 
   TimeOfDay? startTime;
   TimeOfDay? endTime;
@@ -46,12 +106,13 @@ class _AddDeviceScreenState extends State<AddDeviceScreen> {
     'Sun': false,
   };
 
-  String? selectedAppliance;
-  List<String> appliances = ['Oven', 'Microwave', 'Fan'];
-
   IconData selectedIcon = Icons.device_hub;
+  
+  // Added device and editing state 
+  final List<Device> devices = [];
+  bool isEditing = false;
+  String? editingDeviceId;
 
-////////////////////////////////////////////////////////////////////////////
   @override
   Widget build(BuildContext context) {  /////whole frame design + back btn + add device label
     return Scaffold(
@@ -69,15 +130,14 @@ class _AddDeviceScreenState extends State<AddDeviceScreen> {
                   offset: Offset(0.0, 20), 
                   child: IconButton(
                      icon: Icon(Icons.arrow_back, size: 50, color: Colors.black), 
-                    onPressed: () => Navigator.of(context).pop(),
-                  ),
+                  onPressed: () => Navigator.of(context).pop(),
                 ),
               ),
-
+              ),
               Transform.translate( 
               offset: Offset(-50, -30),
            child: Text(
-              ' Add device',
+              isEditing ? ' Edit device' : ' Edit Device',
               textAlign: TextAlign.center,
               style: GoogleFonts.jaldi(
                 textStyle: TextStyle(fontSize: 23, fontWeight: FontWeight.bold),
@@ -106,7 +166,7 @@ class _AddDeviceScreenState extends State<AddDeviceScreen> {
                 ),
               ),
               ///////////////////////////////////////////////////
-              _buildTextField(deviceNameController, "Device Name", Icons.device_hub),  // the input of device and KWPH
+              _buildTextField(deviceNameController, "Device Name", Icons.device_hub),  // input of device and KWPH
               _buildTextField(kwhController, "KWPH", Icons.electrical_services, keyboardType: TextInputType.number),
 
               ////////////////////////////////////////////////////////
@@ -119,7 +179,11 @@ class _AddDeviceScreenState extends State<AddDeviceScreen> {
                       decoration: InputDecoration(
                         filled: true,
                 fillColor: Colors.white,
-                        prefixIcon: Icon(Icons.home,size: 30, color: Colors.black),
+                        prefixIcon: Icon(
+                          selectedRoom != null ? (roomIcons[selectedRoom] ?? Icons.home) : Icons.home,
+                          size: 30, 
+                          color: Colors.black
+                        ),
                         labelText: 'Room',
                          labelStyle: GoogleFonts.jaldi(
                 textStyle: TextStyle(fontSize: 20,),
@@ -185,36 +249,14 @@ class _AddDeviceScreenState extends State<AddDeviceScreen> {
                   });
                 },
               ),
-                                                                        // plug tapos you choose appliance
+                                                                        // appliance input
               if (deviceType == 'Plug') ...[
                 SizedBox(height: 20),
-                DropdownButtonFormField<String>(
-                  decoration: InputDecoration(
-                    filled: true,
-                fillColor: Colors.white,
-                    labelText: 'Appliance',
-                     labelStyle: GoogleFonts.jaldi(
-                textStyle: TextStyle(fontSize: 20,),
-                color: Colors.black,
-                         ),
-                    border: OutlineInputBorder(),
-                  ),
-                   dropdownColor: Colors.grey[200], 
-        style: GoogleFonts.jaldi( 
-          textStyle: TextStyle(fontSize: 18, color: Colors.black87),
-        ),
-                  value: selectedAppliance,
-                  items: appliances.map((app) {
-                    return DropdownMenuItem(
-                      value: app,
-                      child: Text(app),
-                    );
-                  }).toList(),
-                  onChanged: (value) {
-                    setState(() {
-                      selectedAppliance = value;
-                    });
-                  },
+                _buildTextField(
+                  applianceController, 
+                  "Appliance", 
+                  Icons.electrical_services, 
+                  hint: "Enter appliance name"
                 ),
               ],
 
@@ -286,7 +328,7 @@ Transform.translate(
                         style: ElevatedButton.styleFrom(
                           backgroundColor: Colors.black,
                           foregroundColor: Colors.white,
-                          side: BorderSide(color: Colors.grey, width: 1), // Add border color here
+                          side: BorderSide(color: Colors.grey, width: 1), 
                         ),
                       ),
                   ],
@@ -342,7 +384,7 @@ SizedBox(height: 10),    // add device btn
 ElevatedButton(
   onPressed: _submitDevice,
   child: Text(
-                'Add Device', 
+                isEditing ? 'Save Changes' : 'Save Device', 
                 style: GoogleFonts.judson(
                   fontSize: 24,
                   color: Colors.black,
@@ -356,7 +398,7 @@ ElevatedButton(
       borderRadius: BorderRadius.circular(0),
       side: BorderSide(color: Colors.black, width: 1), 
     ),
-    elevation: 5, // Optional: adds shadow
+    elevation: 5, 
     shadowColor: Colors.black.withOpacity(0.5), 
   ),
 ),
@@ -376,8 +418,6 @@ ElevatedButton(
     {TextInputType keyboardType = TextInputType.text, 
     String? hint}
   ) {
-
-    
     return Padding(
       padding: const EdgeInsets.only(bottom: 5,top:10 ),
       child: TextField(
@@ -399,8 +439,12 @@ ElevatedButton(
     );
   }
 //////////////////////////////////////////////////////////////////
- void _addRoomDialog() {    // add btn settings
+ 
+  static IconData roomIconSelected = Icons.home; // add room container
+
+ void _addRoomDialog() {    
   TextEditingController roomInput = TextEditingController();
+
   showDialog(
     context: context,
     builder: (_) => AlertDialog(
@@ -410,31 +454,89 @@ ElevatedButton(
         fontWeight: FontWeight.bold,
         color: Colors.black,
       ),
-      title: Text('Add Room'),
-      content: TextField(
-        controller: roomInput,
-        style: GoogleFonts.inter(
-                textStyle: TextStyle(fontSize: 17,),
-                color: Colors.black, 
+      title: Text('Add Room'), // add room and room name input
+      content: StatefulBuilder(
+        builder: (BuildContext context, StateSetter setDialogState) {
+          return SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(
+                  controller: roomInput,
+                  style: GoogleFonts.inter(
+                    textStyle: TextStyle(fontSize: 17,),
+                    color: Colors.black, 
+                  ),
+                  decoration: InputDecoration(
+                    filled: true,
+                    fillColor: Colors.white,
+                    border: OutlineInputBorder(),
+                    hintText: "Room name",
+                    hintStyle: GoogleFonts.inter(
+                      color: Colors.grey,
+                      fontSize: 15,
+                    ),
+                    
+                    prefixIcon: Icon( // show icon picker for rooms
+                      roomIconSelected,
+                      color: Colors.black,
+                      size: 24,
+                    ),
+                  ),
+                ),
+                SizedBox(height: 15),
+                Text(
+                  'Select Icon',
+                  style: GoogleFonts.jaldi(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.black,
+                  ),
+                ),
+                SizedBox(height: 5), // icon picker
+                Container(
+                  height: 200,
+                  width: double.maxFinite,
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: GridView.count(
+                    crossAxisCount: 4,
+                    shrinkWrap: true,
+                    children: [
+                      Icons.living, Icons.bed, Icons.kitchen, Icons.dining,
+                      Icons.bathroom, Icons.meeting_room, Icons.workspace_premium, Icons.chair,
+                      Icons.stairs, Icons.garage, Icons.yard, Icons.balcony,
+                    ].map((icon) {
+                      return IconButton(
+                        icon: Icon(
+                          icon, 
+                          color: roomIconSelected == icon ? Theme.of(context).colorScheme.secondary : Colors.black,
+                        ),
+                        onPressed: () {
+                          setDialogState(() {
+                            roomIconSelected = icon;
+                          });
+                        },
+                      );
+                    }).toList(),
+                  ),
+                ),
+          ],
         ),
-        decoration: InputDecoration(
-          filled: true,
-                fillColor: Colors.white,
-          border: OutlineInputBorder(),
-          hintText: "Room name",
-          hintStyle: GoogleFonts.inter(
-            color: Colors.grey,
-            fontSize: 15 ,
-          ),
-        ),
+          );
+        }
       ),
-      actions: [
+      
+      actions: [ // add room content
         TextButton(
           onPressed: () {
             if (roomInput.text.isNotEmpty) {
               setState(() {
                 rooms.add(roomInput.text);
                 selectedRoom = roomInput.text;
+                roomIcons[roomInput.text] = roomIconSelected;
               });
             }
             Navigator.pop(context);
@@ -456,7 +558,7 @@ ElevatedButton(
   );
 }
 ////////////////////////////////////////////////////////////////////////////////////////////////////////
-  void _pickIcon() {
+  void _pickIcon() { // icon picker profile
     showModalBottomSheet(
       context: context,
       backgroundColor: const Color(0xFFE9E7E6),
@@ -482,7 +584,7 @@ ElevatedButton(
   }
 
   ///////////////////////////////////////////////////////////////////////////////////////////
-
+// time
   void _applyPresetTime(String preset) {
     if (presetTimes.containsKey(preset)) {
       setState(() {
@@ -516,9 +618,60 @@ ElevatedButton(
     }
   }
   
+  // save btn
   void _submitDevice() {
-  
-    print("Device added: ${deviceNameController.text}, Type: $deviceType");
+    if (deviceNameController.text.isEmpty || kwhController.text.isEmpty || selectedRoom == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Please fill the information'),
+         backgroundColor: Colors.grey[900],
+        duration: Duration(seconds: 1),
+        ),
+      );
+      return;
+    }
+
+    final double kwh = double.tryParse(kwhController.text) ?? 0.0;
+    
+    if (isEditing && editingDeviceId != null) {
+      final int deviceIndex = devices.indexWhere((d) => d.id == editingDeviceId);
+      if (deviceIndex != -1) {
+        devices[deviceIndex] = Device(
+          id: editingDeviceId!,
+          name: deviceNameController.text,
+          type: deviceType,
+          kwh: kwh,
+          room: selectedRoom!,
+          icon: selectedIcon,
+          appliance: deviceType == 'Plug' ? applianceController.text : null,
+          startTime: startTime,
+          endTime: endTime,
+          selectedDays: Map.from(selectedDays),
+        );
+
+      }
+    } else { //new device
+      
+      final newDevice = Device(
+        id: DateTime.now().millisecondsSinceEpoch.toString(),
+        name: deviceNameController.text,
+        type: deviceType,
+        kwh: kwh,
+        room: selectedRoom!,
+        icon: selectedIcon,
+        appliance: deviceType == 'Plug' ? applianceController.text : null,
+        startTime: startTime,
+        endTime: endTime,
+        selectedDays: Map.from(selectedDays),
+      );
+      
+      devices.add(newDevice);
+    
+    }
+    
+    print("Device ${isEditing ? 'updated' : 'added'}: ${deviceNameController.text}, Type: $deviceType");
+    if (deviceType == 'Plug') {
+      print("Appliance: ${applianceController.text}");
+    }
     print("Time range: ${startTime?.format(context)} - ${endTime?.format(context)}");
     
     final selectedDaysList = selectedDays.entries
@@ -526,5 +679,48 @@ ElevatedButton(
         .map((entry) => entry.key)
         .toList();
     print("Repeating days: $selectedDaysList");
+    
+    // Reset and edit
+    _resetForm();
+    setState(() {
+      isEditing = false;
+      editingDeviceId = null;
+    });
+    
+  
+    Navigator.of(context).pop(true); 
+  }
+  void _resetForm() {
+    deviceNameController.clear();
+    kwhController.clear();
+    applianceController.clear();
+    setState(() {
+      deviceType = 'Light';
+      selectedIcon = Icons.device_hub;
+      startTime = null;
+      endTime = null;
+      for (final day in weekdays) {
+        selectedDays[day] = false;
+      }
+    });
+  }
+
+  void _loadDeviceForEditing(Device device) {
+    deviceNameController.text = device.name;
+    kwhController.text = device.kwh.toString();
+    if (device.appliance != null) {
+      applianceController.text = device.appliance!;
+    }
+    
+    setState(() {
+      isEditing = true;
+      editingDeviceId = device.id;
+      deviceType = device.type;
+      selectedRoom = device.room;
+      selectedIcon = device.icon;
+      startTime = device.startTime;
+      endTime = device.endTime;
+      selectedDays = Map.from(device.selectedDays);
+    });
   }
 }

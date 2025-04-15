@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
-import 'package:homesync/screens/notification_screen.dart';
+import 'package:homesync/notification_screen.dart';
+import 'package:homesync/roomsinfo.dart';
 import 'package:weather/weather.dart';
 import 'package:intl/intl.dart';
-import 'package:homesync/screens/homepage_screen.dart';
-import 'package:homesync/screens/devices_screen.dart';
+import 'package:homesync/roomsinfo.dart';
+import 'package:homesync/homepage_screen.dart';
+import 'package:homesync/devices_screen.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 class Rooms extends StatefulWidget {
@@ -14,10 +16,11 @@ class Rooms extends StatefulWidget {
 }
 
 class RoomsState extends State<Rooms> {
- Weather? currentWeather;
+  Weather? currentWeather;
   int _selectedIndex = 2;
 
-  final List<RoomItem> rooms = [
+  // given list
+  List<RoomItem> rooms = [
     RoomItem(
       title: 'Bedroom',
       icon: Icons.bed,
@@ -36,7 +39,10 @@ class RoomsState extends State<Rooms> {
     ),
   ];
 
-@override
+  // dropdownlist
+  List<String> roomTypes = ['Living Room', 'Bedroom', 'Kitchen', 'Dining Area',];
+
+  @override
   Widget build(BuildContext context) {  // whole frame and add btn navi and design
     final screenSize = MediaQuery.of(context).size;
     return Scaffold(
@@ -172,7 +178,12 @@ class RoomsState extends State<Rooms> {
                     color: Colors.grey[300],
                   ),
                   itemBuilder: (context, index) {
-                    return RoomListTile(room: rooms[index]);
+                    return RoomListTile(
+                      room: rooms[index],
+                      onDelete: () {
+                        _deleteRoom(index);
+                      },
+                    );
                   },
                 ),
               ),
@@ -183,14 +194,22 @@ class RoomsState extends State<Rooms> {
     );
   }
 
+ 
+  void _deleteRoom(int index) {
+    setState(() {
+      rooms.removeAt(index);
+    });
+  }
+
 ///////////////////////////////////////////////////////////////////////////
  // Add room settings and function
   void _showAddRoomDialog(BuildContext context) {
     final TextEditingController roomNameController = TextEditingController();
     IconData selectedIcon = Icons.home;
+    String selectedRoomType = roomTypes.isNotEmpty ? roomTypes[0] : 'Living Room';
     
     showDialog(
-      context: context,
+      context: context, // whole  add container
       builder: (BuildContext context) {
         return StatefulBuilder(
           builder: (context, setState) {
@@ -212,7 +231,7 @@ class RoomsState extends State<Rooms> {
                         ),
                       ),
                     ),
-                    SizedBox(height: 15),
+                    SizedBox(height: 15), // room type and drop down design
                     Row(
                       children: [
                         Icon(Icons.home, color: Colors.black, size: 25),
@@ -220,7 +239,7 @@ class RoomsState extends State<Rooms> {
                         Text('Room Type', style: GoogleFonts.inter(color: Colors.grey[700])),
                       ],
                     ),
-                    SizedBox(height: 10),
+                    SizedBox(height: 10), 
                     Container(
                       height: 50,
                       width: double.infinity,
@@ -232,20 +251,24 @@ class RoomsState extends State<Rooms> {
                         padding: const EdgeInsets.symmetric(horizontal: 12.0),
                         child: DropdownButtonHideUnderline(
                           child: DropdownButton<String>(
-                            value: 'Living Room',
-                            items: ['Living Room', 'Bedroom', 'Kitchen Area', 'Dining Area',]
+                            value: selectedRoomType,
+                            items: roomTypes
                                 .map((String value) {
                               return DropdownMenuItem<String>(
                                 value: value,
                                 child: Text(value),
                               );
                             }).toList(),
-                            onChanged: (value) {},
+                            onChanged: (value) {
+                              setState(() {
+                                selectedRoomType = value!;
+                              });
+                            },
                           ),
                         ),
                       ),
                     ),
-                    SizedBox(height: 15),
+                    SizedBox(height: 15), // room icon and select icon design
                     Row(
                       children: [
                         Icon(Icons.image, color: Colors.black, size: 25),
@@ -263,32 +286,31 @@ class RoomsState extends State<Rooms> {
                       ),
                       child: Padding(
                         padding: const EdgeInsets.symmetric(horizontal: 12.0),
-                                                  child: InkWell(
-                            onTap: () {
-                              _showIconPicker(context, (newIcon) {
-                                setState(() {
-                                  selectedIcon = newIcon;
-                                });
+                        child: InkWell(
+                          onTap: () {
+                            _showIconPicker(context, (newIcon) {
+                              setState(() {
+                                selectedIcon = newIcon;
                               });
-                            },
-                            child: Row(
-                              children: [
-                                Container(
-                                  width: 34,
-                                  height: 34,
-                                  decoration: BoxDecoration(
-                                    color: Colors.transparent,
-                                    borderRadius: BorderRadius.circular(8),
-                                  ),
-                               child: Icon(selectedIcon, color: Colors.black87, size: 25),
+                            });
+                          },
+                          child: Row(
+                            children: [
+                              Container(
+                                width: 34,
+                                height: 34,
+                                decoration: BoxDecoration(
+                                  color: Colors.transparent,
+                                  borderRadius: BorderRadius.circular(8),
                                 ),
-                                SizedBox(width: 10),
-                                Text('Select Icon', style: GoogleFonts.inter(color: Colors.grey[700])),
-                                Spacer(),
-                                
-                              ],
-                            ),
+                                child: Icon(selectedIcon, color: Colors.black87, size: 25),
+                              ),
+                              SizedBox(width: 10),
+                              Text('Select Icon', style: GoogleFonts.inter(color: Colors.grey[700])),
+                              Spacer(),
+                            ],
                           ),
+                        ),
                       ),
                     ),
                   ],
@@ -303,6 +325,25 @@ class RoomsState extends State<Rooms> {
                 ),
                 TextButton(
                   onPressed: () {
+                    // Add the new room to list
+                    if (roomNameController.text.isNotEmpty) {
+                      setState(() {
+                       
+                        if (!roomTypes.contains(roomNameController.text)) {
+                          this.setState(() {
+                            roomTypes.add(roomNameController.text);
+                          });
+                        }
+                        
+                        // Add room to the list
+                        this.setState(() {
+                          rooms.add(RoomItem(
+                            title: roomNameController.text,
+                            icon: selectedIcon,
+                          ));
+                        });
+                      });
+                    }
                     Navigator.of(context).pop();
                   },
                   style: TextButton.styleFrom(
@@ -319,17 +360,17 @@ class RoomsState extends State<Rooms> {
   }
   
   void _showIconPicker(BuildContext context, Function(IconData) onIconSelected) {
-    final List<IconData> roomIcons = [
+    final List<IconData> roomIcons = [ //icon picker rooms
       Icons.bed,
       Icons.kitchen,
       Icons.weekend,
       Icons.dining,
-     Icons.garage_rounded,
-     Icons.bathroom,
+      Icons.garage_rounded,
+      Icons.bathroom,
     ];
     
     showDialog(
-      context: context,
+      context: context, // icon container and function
       builder: (BuildContext context) {
         return AlertDialog(
           title: Text('Select Icon', style: GoogleFonts.inter(fontWeight: FontWeight.bold)),
@@ -436,12 +477,12 @@ class RoomsState extends State<Rooms> {
                     leading: const Icon(Icons.notifications, color: Colors.white, size: 35),
                     title: Text('Notification', style: GoogleFonts.inter(color: Colors.white)),
                     onTap: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (context) => NotificationScreen()),
-              );
-            },
-              ),  
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (context) => NotificationScreen()),
+                      );
+                    },
+                  ),  
           
                   const SizedBox(height: 15),
                   ListTile(
@@ -464,49 +505,46 @@ class RoomsState extends State<Rooms> {
   }
 //////////////////////////////////////////////////////////////////////////////////////////////////////
   /// Navigation Button
- Widget _buildNavButton(String title, bool isSelected, int index) {
-  return Column(
-    children: [
-      TextButton(
-        onPressed: () {
-          setState(() => _selectedIndex = index);
-          switch (index) {
-            case 0:
-              Navigator.pushNamed(context, '/homepage');
-              break;
-            case 1:
-              Navigator.pushNamed(context, '/devices');
-              break;
-            case 2:
-              Navigator.pushNamed(context, '/rooms');
-              break;
-          }
-        },
-        child: Text(
-          title,
-          style: GoogleFonts.inter(
-            color: isSelected ? Colors.black : Colors.grey[400],
-            fontWeight: isSelected ? FontWeight.w500 : FontWeight.normal,
-            fontSize: 17,
+  Widget _buildNavButton(String title, bool isSelected, int index) {
+    return Column(
+      children: [
+        TextButton(
+          onPressed: () {
+            setState(() => _selectedIndex = index);
+            switch (index) {
+              case 0:
+                Navigator.pushNamed(context, '/homepage');
+                break;
+              case 1:
+                Navigator.pushNamed(context, '/devices');
+                break;
+              case 2:
+                Navigator.pushNamed(context, '/rooms');
+                break;
+            }
+          },
+          child: Text(
+            title,
+            style: GoogleFonts.inter(
+              color: isSelected ? Colors.black : Colors.grey[400],
+              fontWeight: isSelected ? FontWeight.w500 : FontWeight.normal,
+              fontSize: 17,
+            ),
           ),
         ),
-      ),
-      if (isSelected)
-        Transform.translate(
-          offset: const Offset(0, -10),
-          child: Container(
-            height: 2,
-            width: 70,
-            color: Colors.brown,
-            margin: const EdgeInsets.only(top: 1),
+        if (isSelected)
+          Transform.translate(
+            offset: const Offset(0, -10),
+            child: Container(
+              height: 2,
+              width: 70,
+              color: Colors.brown,
+              margin: const EdgeInsets.only(top: 1),
+            ),
           ),
-        ),
-        
-    ],
-
-    
-  );
-}
+      ],
+    );
+  }
 }
 /////////////////////////////////////////////////////////////////////////////////////////////////
 class RoomItem {     // room setting and function
@@ -521,20 +559,27 @@ class RoomItem {     // room setting and function
 
 class RoomListTile extends StatelessWidget {
   final RoomItem room;
+  final VoidCallback onDelete;
 
   const RoomListTile({
     Key? key,
     required this.room,
+    required this.onDelete,
   }) : super(key: key);
 
   @override
   Widget build(BuildContext context) {
-    return InkWell(
-      onTap: () {
+    final String title = room.title;
+   return GestureDetector(
+    onTap: () {
+      Navigator.pushNamed(context, '/roominfo', arguments: title);
+    }, 
+    onLongPress: () {
+      _showDeleteConfirmation(context);
       },
       child: Container(
         padding: EdgeInsets.symmetric(vertical: 25, horizontal: 16),
-        color: Colors.transparent,
+        color: Colors.transparent, // containers icons list
         child: Row(
           children: [
             Container(
@@ -568,6 +613,39 @@ class RoomListTile extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+  
+  // confirmation for deletion
+  void _showDeleteConfirmation(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          backgroundColor: const Color(0xFFD9D9D9),
+          title: Text('Delete Room', style: GoogleFonts.inter(fontWeight: FontWeight.bold)),
+          content: Text('Are you sure you want to delete "${room.title}"?', 
+                        style: GoogleFonts.inter()),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.of(context).pop();
+              },
+              child: Text('Cancel', style: GoogleFonts.inter(color: Colors.grey[600])),
+            ),
+            TextButton(
+              onPressed: () {
+                onDelete();
+                Navigator.of(context).pop();
+              },
+              style: TextButton.styleFrom(
+                backgroundColor: Colors.transparent,
+              ),
+              child: Text('Delete', style: GoogleFonts.inter(color: Colors.red)),
+            ),
+          ],
+        );
+      },
     );
   }
 }

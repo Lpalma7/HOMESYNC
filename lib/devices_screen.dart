@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
-import 'package:homesync/screens/adddevices.dart';
-import 'package:homesync/screens/notification_screen.dart';
+import 'package:homesync/adddevices.dart';
+import 'package:homesync/notification_screen.dart';
 import 'package:weather/weather.dart';
 import 'package:intl/intl.dart';
-import 'package:homesync/screens/homepage_screen.dart';
+import 'package:homesync/homepage_screen.dart';
 
 import 'package:google_fonts/google_fonts.dart';
 
@@ -17,6 +17,7 @@ class DevicesScreen extends StatefulWidget {
 class DevicesScreenState extends State<DevicesScreen> {
   Weather? currentWeather;
   int _selectedIndex = 1;
+  bool _masterPowerOn = true; // Added overall power control
 
  List<Map<String, dynamic>> devices = [ // devices command
   {'title': 'Kitchen Plug\n (Oven)', 'isOn': true, 'icon': Icons.power},
@@ -29,6 +30,17 @@ class DevicesScreenState extends State<DevicesScreen> {
 ];
 
   Set<int> _selectedDevices = {};
+
+  // function all power toggle
+  void _toggleMasterPower() {
+    setState(() {
+      _masterPowerOn = !_masterPowerOn;
+      // all device and device connect function
+      for (int i = 0; i < devices.length; i++) {
+        devices[i]['isOn'] = _masterPowerOn;
+      }
+    });
+  }
 
  @override
 Widget build(BuildContext context) {
@@ -132,85 +144,142 @@ Widget build(BuildContext context) {
                 ),
               ),
               ////////////////////////////////////////////////////////////
-              // Search Bar
-              const SizedBox(height: 1),
-              Container(
-                width: 355, 
-                height: 47, 
-                child: TextField(
-                  decoration: InputDecoration(
-                    hintText: 'Search',
-                    prefixIcon: const Icon(Icons.search),
-                    filled: true,
-                    fillColor: Color(0xFFD9D9D9),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(30),
-                      borderSide: BorderSide(
-                        color: Colors.grey,
-                        width: 1.5,
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-
-              //////////////////////////////////////////////////////////////////
-              // Switch Controls adjustments
-              const SizedBox(height: 25),
+             
               Expanded(
-                child: Stack(
+                child: Column(
                   children: [
-                    GridView.builder(
-                      itemCount: devices.length,
-                      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                        crossAxisCount: 2,
-                        crossAxisSpacing: 10,
-                        mainAxisSpacing: 10,
-                      ),
-                      itemBuilder: (context, index) {
-                        final device = devices[index];
-                        final isSelected = _selectedDevices.contains(index);
-                        return GestureDetector(
-                          onLongPress: () {
-                            setState(() {
-                              _selectedDevices.contains(index)
-                                  ? _selectedDevices.remove(index)
-                                  : _selectedDevices.add(index);
-                            });
-                          },
+                    // Search Bar and Power Toggle
+                    const SizedBox(height: 1),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Expanded(
                           child: Container(
-                            decoration: BoxDecoration(
-                              color: device['isOn'] ? Colors.black : Colors.white, 
-                              border: Border.all(
-                                color: isSelected ? const Color.fromARGB(255, 110, 0, 15) : Colors.transparent,
-                                width: 2,
+                            height: 47,
+                            child: TextField(
+                              decoration: InputDecoration(
+                                hintText: 'Search',
+                                prefixIcon: const Icon(Icons.search),
+                                filled: true,
+                                fillColor: Color(0xFFD9D9D9),
+                                border: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(30),
+                                  borderSide: BorderSide(
+                                    color: Colors.grey,
+                                    width: 1.5,
+                                  ),
+                                ),
                               ),
-                              borderRadius: BorderRadius.circular(10),
-                            ),
-                            child: DeviceCard(
-                              title: device['title'],
-                              isOn: device['isOn'],
-                              icon: device['icon'],
                             ),
                           ),
-                        );
-                      },
-                    ),
-                    if (_selectedDevices.isNotEmpty)
-                      Positioned(
-                        right: 60,
-                        top: 390,
-                        bottom: 1,
-                        child: IconButton(
-                          icon: const Icon(Icons.delete, color: Colors.black, size: 50),
-                          onPressed: () {
-                            setState(() {
-                              devices.removeWhere((i) => _selectedDevices.contains(i));
-                              _selectedDevices.clear();
-                            });
-                          },
                         ),
+                        // main Power Toggle Button
+                        Padding(
+                          padding: const EdgeInsets.only(left: 8.0),
+                          child: Container(
+                            decoration: BoxDecoration(
+                              color: _masterPowerOn ? Colors.black : Colors.grey,
+                              borderRadius: BorderRadius.circular(24),
+                            ),
+                            child: IconButton(
+                              icon: Icon(
+                                Icons.power_settings_new,
+                                color: Colors.white,
+                                size: 28,
+                              ),
+                              onPressed: _toggleMasterPower,
+                              tooltip: 'Master Power',
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    
+                    //////////////////////////////////////////////////////////////////
+                    // Switch Controls adjustments
+                    const SizedBox(height: 25),
+                    Expanded(
+                      child: Stack(
+                        children: [
+                        
+                          GridView.builder(
+                            physics: const AlwaysScrollableScrollPhysics(),
+                            padding: const EdgeInsets.only(bottom: 70), 
+                            itemCount: devices.length,
+                            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                              crossAxisCount: 2,
+                              crossAxisSpacing: 10,
+                              mainAxisSpacing: 10,
+                            ),
+                            itemBuilder: (context, index) {
+                              final device = devices[index];
+                              final isSelected = _selectedDevices.contains(index);
+                              return GestureDetector(
+                                onLongPress: () {
+                                  setState(() {
+                                    _selectedDevices.contains(index)
+                                        ? _selectedDevices.remove(index)
+                                        : _selectedDevices.add(index);
+                                  });
+                                },
+                                onTap: () {
+                                  setState(() {
+                                    //indiv device power
+                                    devices[index]['isOn'] = !devices[index]['isOn'];
+                                  });
+                                },
+                                child: Container( //container design and delete
+                                  decoration: BoxDecoration(
+                                    color: device['isOn'] ? Colors.black : Colors.white, 
+                                    border: Border.all(
+                                      color: isSelected ? Colors.red: Colors.transparent,
+                                      width: 3,
+                                    ),
+                                    borderRadius: BorderRadius.circular(10),
+                                  ),
+                                  child: DeviceCard(
+                                    title: device['title'],
+                                    isOn: device['isOn'],
+                                    icon: device['icon'],
+                                  ),
+                                ),
+                              );
+                            },
+                          ),
+                          
+                          if (_selectedDevices.isNotEmpty) // delete
+                            Transform.translate(
+                             offset: const Offset(200, 385),
+                              child: Container(
+                                decoration: BoxDecoration(
+                                  color: Colors.transparent.withOpacity(0),
+                                  shape: BoxShape.circle,
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: Colors.transparent.withOpacity(0),
+                                      blurRadius: 0,
+                                      spreadRadius: 0,
+                                    ),
+                                  ],
+                                ),
+                                child: IconButton(
+                                  icon: const Icon(Icons.delete, color: Colors.red, size: 50),
+                                  onPressed: () {
+                                    setState(() {
+                                     
+                                      List<int> indexesToRemove = _selectedDevices.toList()..sort((a, b) => b.compareTo(a));
+                                      for (int index in indexesToRemove) {
+                                        devices.removeAt(index);
+                                      }
+                                      _selectedDevices.clear();
+                                    });
+                                  },
+                                ),
+                              ),
+                            ),
+                        ],
                       ),
+                    ),
                   ],
                 ),
               ),

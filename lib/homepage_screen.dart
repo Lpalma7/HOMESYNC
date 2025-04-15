@@ -1,10 +1,13 @@
 import 'package:flutter/material.dart';
-import 'package:homesync/screens/welcome_screen.dart';
+import 'package:homesync/deviceinfo.dart';
+import 'package:homesync/welcome_screen.dart';
 import 'package:weather/weather.dart';
 import 'package:intl/intl.dart';
-import 'package:homesync/screens/electricity_usage_chart.dart';
+import 'package:homesync/electricity_usage_chart.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:homesync/screens/notification_screen.dart';
+import 'package:homesync/notification_screen.dart';
+//import 'package:homesync/profile_screen.dart';
+import 'package:homesync/deviceinfo.dart';
 
 class HomepageScreen extends StatefulWidget {
   @override
@@ -136,7 +139,7 @@ class _HomeScreenState extends State<HomepageScreen> {
                   
                       Row(
                         children: [
-                          Text('March 10 - March 16'),
+                          Text(selectedPeriod),
                           IconButton(
                             icon: Icon(Icons.calendar_month),
                             onPressed: () => _showPeriodPicker(),
@@ -163,7 +166,7 @@ class _HomeScreenState extends State<HomepageScreen> {
             width: 350,
             padding: const EdgeInsets.all(8),
             decoration: BoxDecoration(
-              color: Colors.grey[350], // 
+              color: Colors.grey[350],  
               
               
             ),
@@ -260,8 +263,13 @@ void _showFlyout(BuildContext context) { //flyout na nakaka baliw ayusin
                 
                 leading: Icon(Icons.person, color: Colors.white,size: 35,),
                 title: Text('Profile', style: GoogleFonts.inter( color: Colors.white)),
-                onTap: () => Navigator.pop(context),
-              ),
+                onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => NotificationScreen()),
+              );
+            },
+              ),  
 
           SizedBox(height: 15),
               ListTile(
@@ -381,18 +389,29 @@ Widget _buildNavButton(String title, bool isSelected, int index) { // nav bar fu
   }
 
   /////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
-  Widget _buildDeviceItem(String name, String usage, IconData icon) { // device settings
-    return Padding(
-      padding: EdgeInsets.symmetric(vertical: 10,horizontal: 10),
-      child: Row(
-        children: [
-          Icon(icon),
-          SizedBox(width: 8),
-          Text(name, style: GoogleFonts.judson(color: Colors.black,fontSize: 16)),
-          Spacer(),
-          Text(usage, style: GoogleFonts.jaldi(color: Colors.black,fontWeight: FontWeight.bold,fontSize: 18)),
-        ],
+Widget _buildDeviceItem(String name, String usage, IconData icon) { // device settings
+  return GestureDetector(
+    onTap: () {
+      Navigator.push(
+        context,
+        MaterialPageRoute(builder: (context) => deviceinfo(
+          deviceName: name,
+          deviceUsage: usage,
+        )),
+      );
+    },
+      child: Padding(
+        padding: EdgeInsets.symmetric(vertical: 10, horizontal: 10),
+        child: Row(
+          children: [
+            Icon(icon),
+            SizedBox(width: 8),
+            Text(name, style: GoogleFonts.judson(color: Colors.black, fontSize: 16)),
+            Spacer(),
+            Text(usage, style: GoogleFonts.jaldi(color: Colors.black, fontWeight: FontWeight.bold, fontSize: 18)),
+            SizedBox(width: 8),
+          ],
+        ),
       ),
     );
   }

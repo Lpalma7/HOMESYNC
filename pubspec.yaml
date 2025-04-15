@@ -32,10 +32,15 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-  fl_chart: ^0.63.0 
+ 
+  fl_chart: ^0.63.0
   weather: ^3.1.0
   time_range_picker: ^2.3.0
   intl: ^0.17.0
+  
+  
+ 
+  
  
   
   

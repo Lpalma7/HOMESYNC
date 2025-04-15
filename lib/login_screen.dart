@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:homesync/screens/forgot_password_screen.dart';
-import 'package:homesync/screens/signup_screen.dart';
-import 'package:homesync/screens/welcome_screen.dart';
+import 'package:homesync/forgot_password_screen.dart';
+import 'package:homesync/signup_screen.dart';
+import 'package:homesync/welcome_screen.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:homesync/screens/homepage_screen.dart';
+import 'package:homesync/homepage_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});

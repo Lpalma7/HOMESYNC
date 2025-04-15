@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:homesync/screens/System_notif.dart';
+import 'package:homesync/System_notif.dart';
+import 'package:homesync/device_notif.dart';
+
+
 
 class NotificationSettings extends StatefulWidget {
   const NotificationSettings({super.key});
@@ -85,8 +88,11 @@ class NotificationSettingsState extends State<NotificationSettings> {
                     _buildNotificationTile(
                       title: 'Device',
                       subtitle: '',
-                      onTap: () {
-                       
+                     onTap: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(builder: (context) => DeviceNotif()),
+                        );
                       },
                     ),
                   ],
