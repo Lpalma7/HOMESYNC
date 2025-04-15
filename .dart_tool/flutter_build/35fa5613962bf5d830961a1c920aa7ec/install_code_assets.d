@@ -1,0 +1,1 @@
+ C:\\Users\\micka\\HOMESYNC\\homesyncfrontend\\.dart_tool\\flutter_build\\35fa5613962bf5d830961a1c920aa7ec\\native_assets.json: 

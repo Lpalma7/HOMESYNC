@@ -1,0 +1,1 @@
+ C:\\Users\\micka\\HOMESYNC\\.dart_tool\\flutter_build\\21128e1480d766fba394689bde346222\\dart_build_result.json: 
