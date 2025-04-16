@@ -7,6 +7,7 @@ import 'package:homesync/roomsinfo.dart';
 import 'package:homesync/homepage_screen.dart';
 import 'package:homesync/devices_screen.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:homesync/welcome_screen.dart';
 
 class Rooms extends StatefulWidget {
   const Rooms({super.key});
@@ -491,9 +492,12 @@ class RoomsState extends State<Rooms> {
                       child: Icon(Icons.logout, color: Colors.white, size: 35),
                     ),
                     title: Text('Logout', style: GoogleFonts.inter(color: Colors.white)),
-                    onTap: () {
-                      Navigator.pushNamed(context, '/welcome'); 
-                    },
+                     onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => WelcomeScreen()),
+              );
+            },
                   ),
                 ],
               ),

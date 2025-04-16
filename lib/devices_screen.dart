@@ -4,6 +4,7 @@ import 'package:homesync/notification_screen.dart';
 import 'package:weather/weather.dart';
 import 'package:intl/intl.dart';
 import 'package:homesync/homepage_screen.dart';
+import 'package:homesync/welcome_screen.dart';
 
 import 'package:google_fonts/google_fonts.dart';
 
@@ -362,9 +363,12 @@ Widget build(BuildContext context) {
                       child: Icon(Icons.logout, color: Colors.white, size: 35),
                     ),
                     title: Text('Logout', style: GoogleFonts.inter(color: Colors.white)),
-                    onTap: () {
-                      Navigator.pushNamed(context, '/welcome');
-                    },
+                     onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => WelcomeScreen()),
+              );
+            },
                   ),
                 ],
               ),
