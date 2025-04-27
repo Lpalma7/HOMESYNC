@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:homesync/homepage_screen.dart';
+
 
 
 
@@ -129,6 +131,27 @@ Transform.translate( // btn sign up
             ),
             ),
 ),
+
+ Transform.translate(
+              offset: Offset(3, 115),
+            child:TextButton(
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (context) => HomepageScreen()),
+                );  
+              },
+           child: Text(
+                'Login as guest',
+                style: GoogleFonts.inter(
+                  textStyle: TextStyle(
+                    fontSize: 16,
+                  ),
+                  color: Colors.grey,
+                ),
+              ),
+              ),
+            ),
           ],
       ),
       ),
