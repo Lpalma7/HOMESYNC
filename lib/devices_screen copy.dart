@@ -3,16 +3,11 @@ import 'package:homesync/adddevices.dart';
 import 'package:homesync/notification_screen.dart';
 import 'package:weather/weather.dart';
 import 'package:homesync/welcome_screen.dart';
-
-import 'package:homesync/relay_state.dart';
-import 'package:homesync/databaseservice.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 class DevicesScreen extends StatefulWidget {
   const DevicesScreen({super.key});
 
-  
-  
   @override
   State<DevicesScreen> createState() => DevicesScreenState();
 }
@@ -20,53 +15,30 @@ class DevicesScreen extends StatefulWidget {
 class DevicesScreenState extends State<DevicesScreen> {
   Weather? currentWeather;
   int _selectedIndex = 1;
+  bool _masterPowerOn = true; // Added overall power control
 
- List<Map<String, dynamic>> devices = [
-  {'title': 'Kitchen Plug\n (Oven)', 'relay': 'relay1', 'icon': Icons.power},
-  {'title': 'Kitchen Area\n Light', 'relay': 'relay2', 'icon': Icons.light},
-  {'title': 'Living Room \nLight', 'relay': 'relay3', 'icon': Icons.light},
-  {'title': 'Bedroom\n Plug (Air-con)', 'relay': 'relay4', 'icon': Icons.power},
-  {'title': 'Living Room \n Plug (Television)', 'relay': 'relay5', 'icon': Icons.power},
-  {'title': 'Bedroom\nLight', 'relay': 'relay6', 'icon': Icons.light},
-  {'title': 'Dining Area \nPlug (Refrigerator)', 'relay': 'relay7', 'icon': Icons.power},
+ List<Map<String, dynamic>> devices = [ // devices command
+  {'title': 'Kitchen Plug\n (Oven)', 'isOn': true, 'icon': Icons.power},
+  {'title': 'Kitchen Area\n Light', 'isOn': false, 'icon': Icons.light},
+  {'title': 'Living Room \nLight', 'isOn': false, 'icon': Icons.light},
+  {'title': 'Bedroom\n Plug (Air-con)', 'isOn': true, 'icon': Icons.power},
+  {'title': 'Living Room \n Plug (Television)', 'isOn': true, 'icon': Icons.power},
+  {'title': 'Bedroom\nLight', 'isOn': false, 'icon': Icons.light},
+  {'title': 'Dining Area \nPlug (Refrigerator)', 'isOn': true, 'icon': Icons.power},
 ];
 
   final Set<int> _selectedDevices = {};
 
   // function all power toggle
   void _toggleMasterPower() {
-  bool newMasterState = !RelayState.relayStates['relay8']!;
-  setState(() {
-    RelayState.relayStates['relay8'] = newMasterState;
-    for (int i = 1; i <= 7; i++) {
-      String relayKey = 'relay$i';
-      RelayState.relayStates[relayKey] = newMasterState;
-    }
-  });
-  // Update Firebase
-  DatabaseService().updateDeviceData('relay8', newMasterState ? 1 : 0);
-  for (int i = 1; i <= 7; i++) {
-    String relayKey = 'relay$i';
-    DatabaseService().updateDeviceData(relayKey, newMasterState ? 1 : 0);
+    setState(() {
+      _masterPowerOn = !_masterPowerOn;
+      // all device and device connect function
+      for (int i = 0; i < devices.length; i++) {
+        devices[i]['isOn'] = _masterPowerOn;
+      }
+    });
   }
-}
-
-@override
-void initState() {
-  super.initState();
-  _fetchRelayStates();
-}
-
-Future<void> _fetchRelayStates() async {
-  DatabaseService dbService = DatabaseService();
-  for (String relay in RelayState.relayStates.keys) {
-    Map<String, dynamic>? data = await dbService.read(path: relay);
-    if (data != null && data['state'] != null) {
-      RelayState.relayStates[relay] = data['state'] == 1;
-    }
-  }
-  setState(() {});
-}
 
  @override
 Widget build(BuildContext context) {
@@ -204,7 +176,7 @@ Widget build(BuildContext context) {
                           padding: const EdgeInsets.only(left: 8.0),
                           child: Container(
                             decoration: BoxDecoration(
-                              color: RelayState.relayStates['relay8']! ? Colors.black : Colors.grey, // Fixed line
+                              color: _masterPowerOn ? Colors.black : Colors.grey,
                               borderRadius: BorderRadius.circular(24),
                             ),
                             child: IconButton(
@@ -250,26 +222,22 @@ Widget build(BuildContext context) {
                                 },
                                 onTap: () {
                                   setState(() {
-                                    String relayPath = devices[index]['relay'];
-                                    bool newState = !RelayState.relayStates[relayPath]!;
-                                    RelayState.relayStates[relayPath] = newState;
-                                    DatabaseService().updateDeviceData(relayPath, newState ? 1 : 0);
+                                    //indiv device power
+                                    devices[index]['isOn'] = !devices[index]['isOn'];
                                   });
                                 },
-                                child: Container(
+                                child: Container( //container design and delete
                                   decoration: BoxDecoration(
-                                    color: RelayState.relayStates[device['relay']]! 
-                                        ? Colors.black 
-                                        : Colors.white, // Updated state check
+                                    color: device['isOn'] ? Colors.black : Colors.white, 
                                     border: Border.all(
-                                      color: isSelected ? Colors.red : Colors.transparent,
+                                      color: isSelected ? Colors.red: Colors.transparent,
                                       width: 3,
                                     ),
                                     borderRadius: BorderRadius.circular(10),
                                   ),
                                   child: DeviceCard(
                                     title: device['title'],
-                                    isOn: RelayState.relayStates[device['relay']] ?? false, // Critical change
+                                    isOn: device['isOn'],
                                     icon: device['icon'],
                                   ),
                                 ),
@@ -282,7 +250,7 @@ Widget build(BuildContext context) {
                              offset: const Offset(200, 385),
                               child: Container(
                                 decoration: BoxDecoration(
-                                  color: Colors.transparent,
+                                  color: Colors.transparent.withOpacity(0),
                                   shape: BoxShape.circle,
                                   boxShadow: [
                                     BoxShadow(
@@ -296,12 +264,9 @@ Widget build(BuildContext context) {
                                   icon: const Icon(Icons.delete, color: Colors.red, size: 50),
                                   onPressed: () {
                                     setState(() {
+                                     
                                       List<int> indexesToRemove = _selectedDevices.toList()..sort((a, b) => b.compareTo(a));
                                       for (int index in indexesToRemove) {
-                                        // Remove from Firebase and RelayState
-                                        String relayPath = devices[index]['relay'];
-                                        DatabaseService().delete(path: relayPath); // Delete from Firebase
-                                        RelayState.relayStates.remove(relayPath); // Remove from global state
                                         devices.removeAt(index);
                                       }
                                       _selectedDevices.clear();
@@ -326,89 +291,90 @@ Widget build(BuildContext context) {
   //////////////////////////////////////////////////////////////////////////////////
   // Flyout Menu
   void _showFlyout(BuildContext context) {
-  final screenSize = MediaQuery.of(context).size;
-  showModalBottomSheet(
-    isScrollControlled: true,
-    context: context,
-    backgroundColor: Colors.transparent,
-    builder: (context) {
-      return Align(
-        alignment: Alignment.centerRight,
-        child: Transform.translate(
-          offset: const Offset(-90, 0),
-          child: Container(
-            width: screenSize.width * 0.75,
-            height: screenSize.height,
-            decoration: const BoxDecoration(
-              color: Color(0xFF3D3D3D),
-              borderRadius: BorderRadius.only(
-                topLeft: Radius.circular(0),
-                bottomLeft: Radius.circular(0),
+    final screenSize = MediaQuery.of(context).size;
+    showModalBottomSheet(
+      isScrollControlled: true,
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (context) {
+        return Align(
+          alignment: Alignment.centerRight,
+          child: Transform.translate(
+            offset: const Offset(-90, 0),
+            child: Container(
+              width: screenSize.width * 0.75,
+              height: screenSize.height,
+              decoration: const BoxDecoration(
+                color: Color(0xFF3D3D3D),
+                borderRadius: BorderRadius.only(
+                  topLeft: Radius.circular(0),
+                  bottomLeft: Radius.circular(0),
+                ),
+              ),
+              padding: const EdgeInsets.all(16.0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const SizedBox(height: 60),
+                  Row(
+                    children: [
+                      const Icon(Icons.account_circle, size: 50, color: Colors.white),
+                      const SizedBox(width: 10),
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            "My Home",
+                            style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold),
+                          ),
+                          Text(
+                            "emailExample@gmail.com",
+                            style: GoogleFonts.inter(color: Colors.white70, fontSize: 14),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 40),
+                  ListTile(
+                    leading: const Icon(Icons.person, color: Colors.white, size: 35),
+                    title: Text('Profile', style: GoogleFonts.inter(color: Colors.white)),
+                    onTap: () => Navigator.pop(context),
+                  ),
+                  const SizedBox(height: 15),
+                  ListTile(
+                    leading: const Icon(Icons.notifications, color: Colors.white, size: 35),
+                    title: Text('Notification', style: GoogleFonts.inter(color: Colors.white)),
+                    onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => NotificationScreen()),
+              );
+            },
+              ),  
+                  
+                  const SizedBox(height: 15),
+                  ListTile(
+                    leading: const Padding(
+                      padding: EdgeInsets.only(left: 5),
+                      child: Icon(Icons.logout, color: Colors.white, size: 35),
+                    ),
+                    title: Text('Logout', style: GoogleFonts.inter(color: Colors.white)),
+                     onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => WelcomeScreen()),
+              );
+            },
+                  ),
+                ],
               ),
             ),
-            padding: const EdgeInsets.all(16.0),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const SizedBox(height: 60),
-                Row(
-                  children: [
-                    const Icon(Icons.account_circle, size: 50, color: Colors.white),
-                    const SizedBox(width: 10),
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text(
-                          "My Home",
-                          style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold),
-                        ),
-                        Text(
-                          "emailExample@gmail.com",
-                          style: GoogleFonts.inter(color: Colors.white70, fontSize: 14),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 40),
-                ListTile(
-                  leading: const Icon(Icons.person, color: Colors.white, size: 35),
-                  title: Text('Profile', style: GoogleFonts.inter(color: Colors.white)),
-                  onTap: () => Navigator.pop(context),
-                ),
-                const SizedBox(height: 15),
-                ListTile(
-                  leading: const Icon(Icons.notifications, color: Colors.white, size: 35),
-                  title: Text('Notification', style: GoogleFonts.inter(color: Colors.white)),
-                  onTap: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(builder: (context) => NotificationScreen()),
-                    );
-                  },
-                ),  
-                const SizedBox(height: 15),
-                ListTile(
-                  leading: const Padding(
-                    padding: EdgeInsets.only(left: 5),
-                    child: Icon(Icons.logout, color: Colors.white, size: 35),
-                  ),
-                  title: Text('Logout', style: GoogleFonts.inter(color: Colors.white)),
-                  onTap: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(builder: (context) => WelcomeScreen()),
-                    );
-                  },
-                ),
-              ],
-            ),
           ),
-        ),
-      );
-    },
-  );
-}
+        );
+      },
+    );
+  }
 
   ////////////////////////////////////////////////////////////////////////////////////////////
   // Navigation Button

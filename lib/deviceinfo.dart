@@ -7,10 +7,10 @@ class deviceinfo extends StatefulWidget {
   final String deviceUsage;
 
   const deviceinfo({
-    Key? key,
+    super.key,
     required this.deviceName,
     required this.deviceUsage,
-  }) : super(key: key);
+  });
 
   @override
   deviceinfoState createState() => deviceinfoState();

@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:homesync/adddevices.dart';
+import 'package:homesync/relay_state.dart';
+import 'package:homesync/databaseservice.dart';
 
 class Roomsinfo extends StatefulWidget {
   final String RoomItem;
@@ -12,70 +14,81 @@ class Roomsinfo extends StatefulWidget {
 }
 
 class RoomsinfoState extends State<Roomsinfo> {
-  bool _masterPowerOn = true; 
-  int _selectedIndex = 1;
+  final Set<int> _selectedDevices = {};
+  late List<Map<String, dynamic>> devices;
 
-  // device list
-  List<Map<String, dynamic>> devices = [
-    {'title': 'Bedroom\n Plug (Air-con)', 'isOn': true, 'icon': Icons.power},
-    {'title': 'Bedroom\nLight', 'isOn': false, 'icon': Icons.light},
-  ];
+  // Room-to-devices mapping
+  final Map<String, List<Map<String, dynamic>>> _roomDevices = {
+    'Kitchen': [
+      {'title': 'Kitchen Plug\n(Oven)', 'relay': 'relay1', 'icon': Icons.power},
+      {'title': 'Kitchen Area\nLight', 'relay': 'relay2', 'icon': Icons.light},
+    ],
+    'Living Room': [
+      {'title': 'Living Room\nLight', 'relay': 'relay3', 'icon': Icons.light},
+      {'title': 'Living Room Plug\n(Television)', 'relay': 'relay5', 'icon': Icons.power},
+    ],
+    'Bedroom': [
+      {'title': 'Bedroom Plug\n(Air-con)', 'relay': 'relay4', 'icon': Icons.power},
+      {'title': 'Bedroom\nLight', 'relay': 'relay6', 'icon': Icons.light},
+    ],
+    'Dining Area': [
+      {'title': 'Dining Area Plug\n(Refrigerator)', 'relay': 'relay7', 'icon': Icons.power},
+    ],
+  };
 
-  Set<int> _selectedDevices = {};
+  @override
+  void initState() {
+    super.initState();
+    // Initialize devices based on selected room
+    devices = _roomDevices[widget.RoomItem] ?? [];
+    _fetchRelayStates();
+  }
+
+  Future<void> _fetchRelayStates() async {
+    DatabaseService dbService = DatabaseService();
+    for (var device in devices) {
+      String relayPath = device['relay'];
+      Map<String, dynamic>? data = await dbService.read(path: relayPath);
+      if (data != null && data['state'] != null) {
+        RelayState.relayStates[relayPath] = data['state'] == 1;
+      }
+    }
+    setState(() {});
+  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: const Color(0xFFE9E7E6),
       floatingActionButton: FloatingActionButton(
-        onPressed: () { // add btn and frame
-          Navigator.push(
-            context,
-            MaterialPageRoute(builder: (context) => AddDeviceScreen()),
-          );
-        },
-        backgroundColor: Colors.black,
-        foregroundColor: Colors.white,
-        child: const Icon(Icons.add),
+        onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (context) => AddDeviceScreen())),
       ),
       body: SafeArea(
         child: Padding(
           padding: const EdgeInsets.all(16.0),
           child: Column(
             children: [
-              
               Container(
-                padding: EdgeInsets.only(left: 1, top: 30), // back
+                padding: const EdgeInsets.only(top: 30),
                 child: Row(
                   children: [
                     IconButton(
-                      icon: Icon(Icons.arrow_back, size: 50, color: Colors.black),
-                      onPressed: () {
-                        Navigator.pop(context);
-                      },
+                      icon: const Icon(Icons.arrow_back, size: 50, color: Colors.black),
+                      onPressed: () => Navigator.pop(context),
                     ),
-                    Transform.translate( //title
-                      offset: Offset(5, -1),
-                      child: Text(
-                        widget.RoomItem,
-                        textAlign: TextAlign.center,
-                        style: GoogleFonts.jaldi(
-                          textStyle: TextStyle(fontSize: 23, fontWeight: FontWeight.bold),
-                          color: Colors.black,
-                        ),
+                    Text(
+                      widget.RoomItem,
+                      style: GoogleFonts.jaldi(
+                        textStyle: const TextStyle(fontSize: 23, fontWeight: FontWeight.bold),
                       ),
                     ),
                   ],
                 ),
               ),
-              SizedBox(height: 20), 
               Expanded(
                 child: Stack(
                   children: [
-                    // Devices Grid
                     GridView.builder(
-                      physics: const AlwaysScrollableScrollPhysics(),
-                      padding: const EdgeInsets.only(bottom: 30),
                       itemCount: devices.length,
                       gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
                         crossAxisCount: 2,
@@ -86,66 +99,55 @@ class RoomsinfoState extends State<Roomsinfo> {
                         final device = devices[index];
                         final isSelected = _selectedDevices.contains(index);
                         return GestureDetector(
-                          onLongPress: () {
-                            setState(() {
-                              _selectedDevices.contains(index)
-                                  ? _selectedDevices.remove(index)
-                                  : _selectedDevices.add(index);
-                            });
-                          },
+                          onLongPress: () => setState(() => _selectedDevices.contains(index) 
+                              ? _selectedDevices.remove(index) 
+                              : _selectedDevices.add(index)),
                           onTap: () {
                             setState(() {
-                              // Individual device power
-                              devices[index]['isOn'] = !devices[index]['isOn'];
+                              String relayPath = device['relay'];
+                              bool newState = !(RelayState.relayStates[relayPath] ?? false);
+                              RelayState.relayStates[relayPath] = newState;
+                              DatabaseService().updateDeviceData(relayPath, newState ? 1 : 0);
                             });
-                          }, 
-                          child: Container( // delete and on off design
+                          },
+                          child: Container(
                             decoration: BoxDecoration(
-                              color: device['isOn'] ? Colors.black : Colors.white,
+                              color: RelayState.relayStates[device['relay']]! 
+                                  ? Colors.black 
+                                  : Colors.white,
                               border: Border.all(
-                                color: isSelected ? Colors.red : Colors.transparent, 
+                                color: isSelected ? Colors.red : Colors.transparent,
                                 width: 3,
                               ),
                               borderRadius: BorderRadius.circular(10),
                             ),
                             child: DeviceCard(
                               title: device['title'],
-                              isOn: device['isOn'],
+                              isOn: RelayState.relayStates[device['relay']]!,
                               icon: device['icon'],
                             ),
                           ),
                         );
                       },
                     ),
-                    
-                    // Delete button 
                     if (_selectedDevices.isNotEmpty)
-                      Transform.translate(
-                        offset: const Offset(200, 515),
-                        child: Container(
-                          decoration: BoxDecoration(
-                            color: Colors.transparent.withOpacity(0),
-                            shape: BoxShape.circle,
-                            boxShadow: [
-                              BoxShadow(
-                                color: Colors.transparent.withOpacity(0),
-                                blurRadius: 0,
-                                spreadRadius: 0,
-                              ),
-                            ],
-                          ),
-                          child: IconButton(
-                            icon: const Icon(Icons.delete, color: Colors.red, size: 50),
-                            onPressed: () {
-                              setState(() {
-                                List<int> indexesToRemove = _selectedDevices.toList()..sort((a, b) => b.compareTo(a));
-                                for (int index in indexesToRemove) {
-                                  devices.removeAt(index);
-                                }
-                                _selectedDevices.clear();
-                              });
-                            },
-                          ),
+                      Positioned(
+                        right: 20,
+                        bottom: 20,
+                        child: IconButton(
+                          icon: const Icon(Icons.delete, color: Colors.red, size: 50),
+                          onPressed: () {
+                            setState(() {
+                              List<int> indexes = _selectedDevices.toList()..sort((a, b) => b.compareTo(a));
+                              for (int index in indexes) {
+                                String relayPath = devices[index]['relay'];
+                                DatabaseService().delete(path: relayPath);
+                                RelayState.relayStates.remove(relayPath);
+                                devices.removeAt(index);
+                              }
+                              _selectedDevices.clear();
+                            });
+                          },
                         ),
                       ),
                   ],
@@ -159,7 +161,6 @@ class RoomsinfoState extends State<Roomsinfo> {
   }
 }
 
-// DeviceCard 
 class DeviceCard extends StatelessWidget {
   final String title;
   final bool isOn;
@@ -173,44 +174,30 @@ class DeviceCard extends StatelessWidget {
   });
 
   @override
-  Widget build(BuildContext context) { // container device design
+  Widget build(BuildContext context) {
     return Container(
-      width: 140,
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(10),
         border: Border.all(
           color: isOn ? Colors.white : Colors.black,
-          width: 3,
-        ),
+          width: 3),
       ),
-      padding: const EdgeInsets.all(12),
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
-        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
           Icon(icon, color: isOn ? Colors.white : Colors.grey),
-          const SizedBox(height: 1),
-          
-          Transform.translate(
-            offset: const Offset(0, 4),
-            child: Text(
-              title,
-              textAlign: TextAlign.center,
-              style: GoogleFonts.inter(
-                fontSize: 14,
-                color: isOn ? Colors.white : Colors.grey,
-              ),
+          Text(
+            title,
+            textAlign: TextAlign.center,
+            style: GoogleFonts.inter(
+              color: isOn ? Colors.white : Colors.grey,
+              fontSize: 14,
             ),
           ),
-          const SizedBox(height: 10),
-          Transform.translate(
-            offset: const Offset(0, 5),
-            child: Text(
-              isOn ? 'ON' : 'Off',
-              style: TextStyle(
-                fontWeight: FontWeight.bold,
-                color: isOn ? Colors.white : Colors.grey,
-              ),
+          Text(
+            isOn ? 'ON' : 'Off',
+            style: TextStyle(
+              fontWeight: FontWeight.bold,
+              color: isOn ? Colors.white : Colors.grey,
             ),
           ),
         ],
