@@ -11,23 +11,13 @@ import 'package:homesync/notification_screen.dart';
 import 'package:homesync/notification_settings.dart';
 import 'package:homesync/System_notif.dart';
 import 'package:homesync/device_notif.dart';
+import 'package:homesync/deviceinfo.dart';
 import 'package:homesync/roomsinfo.dart';
 import 'package:homesync/schedule.dart';
-import 'package:firebase_core/firebase_core.dart';
 //import 'package:homesync/profile_screen.dart';
 
-void main() async {
-  WidgetsFlutterBinding.ensureInitialized();
-  await Firebase.initializeApp(
-    options: const FirebaseOptions(
-      apiKey: "258697759332",
-      appId: "1:258697759332:ios:7620bdfd38bcb3d13b2d71",
-      messagingSenderId: "YOUR_SENDER_ID",
-      projectId: "homeautomation-b6d6d",
-      databaseURL: "https://homeautomation-b6d6d-default-rtdb.firebaseio.com/",
-    ),
-  );
-  runApp(MyApp());
+void main() {
+  runApp(const MyApp());
 }
 
 class MyApp extends StatelessWidget {
