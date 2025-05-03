@@ -2,14 +2,14 @@ import 'package:flutter/material.dart';
 import 'package:homesync/deviceinfo.dart';
 import 'package:homesync/welcome_screen.dart';
 import 'package:weather/weather.dart';
-import 'package:intl/intl.dart';
 import 'package:homesync/electricity_usage_chart.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:homesync/notification_screen.dart';
 //import 'package:homesync/profile_screen.dart';
-import 'package:homesync/deviceinfo.dart';
 
 class HomepageScreen extends StatefulWidget {
+  const HomepageScreen({super.key});
+
   @override
   _HomeScreenState createState() => _HomeScreenState();
   
@@ -112,7 +112,7 @@ class _HomeScreenState extends State<HomepageScreen> {
 
                   Transform.translate(
                 offset: Offset(-1, -20),
-              child: Container(
+              child: SizedBox(
               width: 1000, 
               child: Divider(
                 height: 1,

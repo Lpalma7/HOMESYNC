@@ -38,7 +38,7 @@ class Device {
     Map<String, bool>? selectedDays,
   }) {
     return Device(
-      id: this.id,
+      id: id,
       name: name ?? this.name,
       type: type ?? this.type,
       kwh: kwh ?? this.kwh,
@@ -324,12 +324,12 @@ Transform.translate(
                     for (final preset in presetTimes.keys)
                       ElevatedButton(
                         onPressed: () => _applyPresetTime(preset),
-                        child: Text(preset),
                         style: ElevatedButton.styleFrom(
                           backgroundColor: Colors.black,
                           foregroundColor: Colors.white,
                           side: BorderSide(color: Colors.grey, width: 1), 
                         ),
+                        child: Text(preset),
                       ),
                   ],
                 ),
@@ -383,13 +383,6 @@ Transform.translate(
 SizedBox(height: 10),    // add device btn
 ElevatedButton(
   onPressed: _submitDevice,
-  child: Text(
-                isEditing ? 'Save Changes' : 'Save Device', 
-                style: GoogleFonts.judson(
-                  fontSize: 24,
-                  color: Colors.black,
-                ),
-  ),
   style: ElevatedButton.styleFrom(
     minimumSize: Size(double.infinity, 60),
     backgroundColor: Colors.white, 
@@ -400,6 +393,13 @@ ElevatedButton(
     ),
     elevation: 5, 
     shadowColor: Colors.black.withOpacity(0.5), 
+  ),
+  child: Text(
+                isEditing ? 'Save Changes' : 'Save Device', 
+                style: GoogleFonts.judson(
+                  fontSize: 24,
+                  color: Colors.black,
+                ),
   ),
 ),
             ],
@@ -542,8 +542,8 @@ ElevatedButton(
             Navigator.pop(context);
           },
           style: ButtonStyle(
-            backgroundColor: MaterialStateProperty.all(Colors.black),
-            foregroundColor: MaterialStateProperty.all(Colors.white),
+            backgroundColor: WidgetStateProperty.all(Colors.black),
+            foregroundColor: WidgetStateProperty.all(Colors.white),
           ),
           child: Text(
             'Add',

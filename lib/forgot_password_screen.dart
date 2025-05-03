@@ -60,7 +60,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                           );
                         },
                         style: ButtonStyle(
-                          overlayColor: MaterialStateProperty.all(Colors.transparent),
+                          overlayColor: WidgetStateProperty.all(Colors.transparent),
                         ),
                       ),
                     ),
@@ -219,10 +219,10 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                         );
                       },
                       style: ButtonStyle(
-                        minimumSize: MaterialStateProperty.all(Size.zero),
-                        padding: MaterialStateProperty.all(EdgeInsets.symmetric(horizontal: 8, vertical: 4)),
+                        minimumSize: WidgetStateProperty.all(Size.zero),
+                        padding: WidgetStateProperty.all(EdgeInsets.symmetric(horizontal: 8, vertical: 4)),
                         tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                        overlayColor: MaterialStateProperty.all(Colors.transparent),
+                        overlayColor: WidgetStateProperty.all(Colors.transparent),
                       ),
                       child: Text(
                         'Don\'t have an account? SIGN UP',
