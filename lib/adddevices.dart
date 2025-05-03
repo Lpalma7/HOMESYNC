@@ -2,8 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 class AddDeviceScreen extends StatefulWidget {
-  const AddDeviceScreen({super.key});
-
   @override
   _AddDeviceScreenState createState() => _AddDeviceScreenState();
 } 
@@ -321,12 +319,12 @@ class _AddDeviceScreenState extends State<AddDeviceScreen> {
                           for (final preset in presetTimes.keys)
                             ElevatedButton(
                               onPressed: () => _applyPresetTime(preset),
+                              child: Text(preset),
                               style: ElevatedButton.styleFrom(
                                 backgroundColor: Colors.black,
                                 foregroundColor: Colors.white,
                                 side: BorderSide(color: Colors.grey, width: 1),
                               ),
-                              child: Text(preset),
                             ),
                         ],
                       ),
@@ -397,6 +395,13 @@ class _AddDeviceScreenState extends State<AddDeviceScreen> {
                   // Submit button
                   ElevatedButton(
                     onPressed: _validateAndSubmitDevice,
+                    child: Text(
+                      'Add Device', 
+                      style: GoogleFonts.judson(
+                        fontSize: 24,
+                        color: Colors.black,
+                      ),
+                    ),
                     style: ElevatedButton.styleFrom(
                       minimumSize: Size(double.infinity, 60),
                       backgroundColor: Colors.white, 
@@ -407,13 +412,6 @@ class _AddDeviceScreenState extends State<AddDeviceScreen> {
                       ),
                       elevation: 5,
                       shadowColor: Colors.black.withOpacity(0.5), 
-                    ),
-                    child: Text(
-                      'Add Device', 
-                      style: GoogleFonts.judson(
-                        fontSize: 24,
-                        color: Colors.black,
-                      ),
                     ),
                   ),
                 ],
@@ -565,8 +563,8 @@ class _AddDeviceScreenState extends State<AddDeviceScreen> {
               Navigator.pop(context);
             },
             style: ButtonStyle(
-              backgroundColor: WidgetStateProperty.all(Colors.black),
-              foregroundColor: WidgetStateProperty.all(Colors.white),
+              backgroundColor: MaterialStateProperty.all(Colors.black),
+              foregroundColor: MaterialStateProperty.all(Colors.white),
             ),
             child: Text(
               'Add',
