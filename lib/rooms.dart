@@ -1,6 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:homesync/notification_screen.dart';
+import 'package:homesync/roomsinfo.dart';
 import 'package:weather/weather.dart';
+import 'package:intl/intl.dart';
+import 'package:homesync/roomsinfo.dart';
+import 'package:homesync/homepage_screen.dart';
+import 'package:homesync/devices_screen.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:homesync/welcome_screen.dart';
 
@@ -143,7 +148,7 @@ class RoomsState extends State<Rooms> {
 
 ///////////////////////////////////////////////////////////////////////////////////////
               const SizedBox(height: 1), // search bar
-              SizedBox(
+              Container(
                 width: 355, 
                 height: 47, 
                 child: TextField(
@@ -370,7 +375,7 @@ class RoomsState extends State<Rooms> {
       builder: (BuildContext context) {
         return AlertDialog(
           title: Text('Select Icon', style: GoogleFonts.inter(fontWeight: FontWeight.bold)),
-          content: SizedBox(
+          content: Container(
             width: double.maxFinite,
             child: GridView.builder(
               shrinkWrap: true,
@@ -561,10 +566,10 @@ class RoomListTile extends StatelessWidget {
   final VoidCallback onDelete;
 
   const RoomListTile({
-    super.key,
+    Key? key,
     required this.room,
     required this.onDelete,
-  });
+  }) : super(key: key);
 
   @override
   Widget build(BuildContext context) {

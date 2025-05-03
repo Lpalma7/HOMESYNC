@@ -226,13 +226,13 @@ class _NotificationScreenState extends State<NotificationScreen> {
           Spacer(),
           ElevatedButton(
             onPressed: _deleteSelected,
+            child: Text('Delete Selected',
+            style: TextStyle(fontSize: 15,),
+              ),
             style: ElevatedButton.styleFrom(
               backgroundColor: Colors.red,
               foregroundColor: Colors.white,
             ),
-            child: Text('Delete Selected',
-            style: TextStyle(fontSize: 15,),
-              ),
           ),
         ],
       ),
@@ -261,7 +261,7 @@ class NotificationCard extends StatelessWidget {
   final bool isDeleteMode;
   final VoidCallback onToggleSelection;
 
-  const NotificationCard({super.key, 
+  const NotificationCard({
     required this.notification,
     required this.isDeleteMode,
     required this.onToggleSelection,
