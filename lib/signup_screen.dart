@@ -4,9 +4,55 @@ import 'package:homesync/homepage_screen.dart';
 import 'package:homesync/login_screen.dart';
 import 'package:homesync/welcome_screen.dart';
 
-class SignUpScreen extends StatelessWidget {
+class SignUpScreen extends StatefulWidget {
   const SignUpScreen({super.key});
 
+  @override
+  State<SignUpScreen> createState() => _SignUpScreenState();
+}
+
+class _SignUpScreenState extends State<SignUpScreen> {
+  final _formKey = GlobalKey<FormState>();
+  
+ 
+  final _emailController = TextEditingController();
+  final _usernameController = TextEditingController();
+  final _addressController = TextEditingController();
+  final _passwordController = TextEditingController();
+  final _confirmPasswordController = TextEditingController();
+  
+  // visible pass
+  bool _obscurePassword = true;
+  bool _obscureConfirmPassword = true;
+  
+  // Form validation state
+  String? _emailError;
+  String? _passwordError;
+  String? _addressError;
+  
+  // valid email
+  final _emailRegex = RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$');
+  
+  @override
+  void dispose() {
+    _emailController.dispose();
+    _usernameController.dispose();
+    _addressController.dispose();
+    _passwordController.dispose();
+    _confirmPasswordController.dispose();
+    super.dispose();
+  }
+
+  // email format
+  bool _isValidEmail(String email) {
+    return _emailRegex.hasMatch(email);
+  }
+  
+  // valid address
+  bool _isValidAddress(String address) {
+    return address.trim().isNotEmpty && address.trim().length >= 5;
+  }
+  
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -14,159 +60,278 @@ class SignUpScreen extends StatelessWidget {
       appBar: null,
       body: Padding(
         padding: EdgeInsets.all(14),
-        child: ListView(  
-          children: [
-            Align( // Back arrow
-              alignment: Alignment.topLeft,
-              child: Padding(
-                padding: EdgeInsets.only(left: 5, top: 30), 
-                child: IconButton(
-                  icon: Icon(Icons.arrow_back, size: 50, color: Colors.black),
-                  onPressed: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(builder: (context) => WelcomeScreen()),
-                    );
-                  },
-                ),
-              ),
-            ),
-
-            Center( // logo
-              child: Transform.translate(
-                offset: Offset(0, -20),
-                child: Image.asset(
-                  'assets/homesync_logo.png',
-                  height: 120,
-                  errorBuilder: (context, error, stackTrace) {
-                    return Text('HomeSync', style: TextStyle(fontSize: 40));
-                  },
-                ),
-              ),
-            ),
-
-            Transform.translate( //title
-              offset: Offset(-55, -170),
-              child: Text(
-                'SIGN UP',
-                textAlign: TextAlign.center,
-                style: GoogleFonts.jaldi(
-                  fontSize: 23,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.black,
-                ),
-              ),
-            ),
-
-            Transform.translate( // title
-              offset: Offset(1, -70),
-              child: Text(
-                'HOMESYNC',
-                textAlign: TextAlign.center,
-                style: GoogleFonts.instrumentSerif(
-                  fontSize: 25,
-                  color: Colors.black,
-                ),
-              ),
-            ),
-
-            // inputs 
-            Transform.translate(
-              offset: Offset(0, -20), 
-              child: _buildTextField(Icons.email, 'Email Address'),
-            ),
-
-            Transform.translate(
-              offset: Offset(0, -20),
-              child: _buildTextField(Icons.person, 'Username'),
-            ),
-
-            Transform.translate(
-              offset: Offset(0, -20),
-              child: _buildTextField(Icons.house, 'House Address'),
-            ),
-
-            Transform.translate(
-              offset: Offset(0, -20),
-              child: _buildTextField(Icons.lock, 'Password', obscureText: true),
-            ),
-
-            Transform.translate(
-              offset: Offset(0, -20), 
-              child: _buildTextField(Icons.lock, 'Re-Enter Password', obscureText: true),
-            ),
-
-            Transform.translate(
-              offset: Offset(0, -9),
-              child: ElevatedButton(
-                onPressed: () {
-                  Navigator.pushReplacement(
-                    context,
-                    MaterialPageRoute(builder: (context) => HomepageScreen()),
-                  );
-                },
-                style: ElevatedButton.styleFrom(
-                  padding: EdgeInsets.symmetric(vertical: 13,),
-                  backgroundColor: Colors.white,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(1),
-                    side: BorderSide(color: Colors.black, width: 1),
+        child: Form(
+          key: _formKey,
+          child: ListView(  
+            children: [
+              Align( // Back arrow
+                alignment: Alignment.topLeft,
+                child: Padding(
+                  padding: EdgeInsets.only(left: 5, top: 30), 
+                  child: IconButton(
+                    icon: Icon(Icons.arrow_back, size: 50, color: Colors.black),
+                    onPressed: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (context) => WelcomeScreen()),
+                      );
+                    },
                   ),
-                  elevation: 5,
-                  shadowColor: Colors.black.withOpacity(0.5),
                 ),
+              ),
+  
+              Center( // logo
+                child: Transform.translate(
+                  offset: Offset(0, -20),
+                  child: Image.asset(
+                    'assets/homesync_logo.png',
+                    height: 120,
+                    errorBuilder: (context, error, stackTrace) {
+                      return Text('HomeSync', style: TextStyle(fontSize: 40));
+                    },
+                  ),
+                ),
+              ),
+  
+              Transform.translate( //title
+                offset: Offset(-55, -170),
                 child: Text(
-                  'Create Account',
-                  style: GoogleFonts.judson(
-                    fontSize: 20,
+                  'SIGN UP',
+                  textAlign: TextAlign.center,
+                  style: GoogleFonts.jaldi(
+                    fontSize: 23,
+                    fontWeight: FontWeight.bold,
                     color: Colors.black,
                   ),
                 ),
               ),
-            ),
-
-Transform.translate(
-              offset: Offset(0, 5),
-            child:TextButton(
-              onPressed: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (context) => LoginScreen()),
-                );
-              },
-              child: Text(
-                'Already have an account? LOG IN',
-                style: GoogleFonts.inter(
-                  fontSize: 15,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.grey,
+  
+              Transform.translate( // title
+                offset: Offset(1, -70),
+                child: Text(
+                  'HOMESYNC',
+                  textAlign: TextAlign.center,
+                  style: GoogleFonts.instrumentSerif(
+                    fontSize: 25,
+                    color: Colors.black,
+                  ),
                 ),
               ),
+  
+              // inputs 
+              Transform.translate(
+                offset: Offset(0, -20), 
+                child: _buildValidatedTextField(
+                  controller: _emailController,
+                  icon: Icons.email, 
+                  hintText: 'Email Address',
+                  validator: (value) {
+                    if (value == null || value.isEmpty) {
+                      return 'Email is required';
+                    }
+                    if (!_isValidEmail(value)) {
+                      return 'Please enter a valid email address';
+                    }
+                    return null;
+                  },
+                ),
               ),
-            ),
-          ],
+  
+              Transform.translate(
+                offset: Offset(0, -20),
+                child: _buildValidatedTextField(
+                  controller: _usernameController,
+                  icon: Icons.person, 
+                  hintText: 'Username',
+                  validator: (value) {
+                    if (value == null || value.isEmpty) {
+                      return 'Username is required';
+                    }
+                    return null;
+                  },
+                ),
+              ),
+  
+              Transform.translate(
+                offset: Offset(0, -20),
+                child: _buildValidatedTextField(
+                  controller: _addressController,
+                  icon: Icons.house, 
+                  hintText: 'House Address',
+                  validator: (value) {
+                    if (value == null || value.isEmpty) {
+                      return 'House address is required';
+                    }
+                    if (!_isValidAddress(value)) {
+                      return 'Please enter a valid house address';
+                    }
+                    return null;
+                  },
+                ),
+              ),
+  
+              Transform.translate(
+                offset: Offset(0, -20),
+                child: _buildPasswordField(
+                  controller: _passwordController,
+                  hintText: 'Password',
+                  obscureText: _obscurePassword,
+                  toggleVisibility: () {
+                    setState(() {
+                      _obscurePassword = !_obscurePassword;
+                    });
+                  },
+                  validator: (value) {
+                    if (value == null || value.isEmpty) {
+                      return 'Password is required';
+                    }
+                    if (value.length < 8) {
+                      return 'Password must be at least 8 characters long';
+                    }
+                    return null;
+                  },
+                ),
+              ),
+  
+              Transform.translate(
+                offset: Offset(0, -20), 
+                child: _buildPasswordField(
+                  controller: _confirmPasswordController,
+                  hintText: 'Re-Enter Password',
+                  obscureText: _obscureConfirmPassword,
+                  toggleVisibility: () {
+                    setState(() {
+                      _obscureConfirmPassword = !_obscureConfirmPassword;
+                    });
+                  },
+                  validator: (value) {
+                    if (value == null || value.isEmpty) {
+                      return 'Please confirm your password';
+                    }
+                    if (value != _passwordController.text) {
+                      return 'Passwords do not match';
+                    }
+                    return null;
+                  },
+                ),
+              ),
+  
+              Transform.translate(
+                offset: Offset(0, -9),
+                child: ElevatedButton(
+                  onPressed: () {
+                    if (_formKey.currentState!.validate()) {
+          
+                      Navigator.pushReplacement(
+                        context,
+                        MaterialPageRoute(builder: (context) => HomepageScreen()),
+                      );
+                    }
+                  },
+                  style: ElevatedButton.styleFrom(
+                    padding: EdgeInsets.symmetric(vertical: 13,),
+                    backgroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(1),
+                      side: BorderSide(color: Colors.black, width: 1),
+                    ),
+                    elevation: 5,
+                    shadowColor: Colors.black.withOpacity(0.5),
+                  ),
+                  child: Text(
+                    'Create Account',
+                    style: GoogleFonts.judson(
+                      fontSize: 20,
+                      color: Colors.black,
+                    ),
+                  ),
+                ),
+              ),
+  
+              Transform.translate(
+                offset: Offset(0, 5),
+                child: TextButton(
+                  onPressed: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (context) => LoginScreen()),
+                    );
+                  },
+                  child: Text(
+                    'Already have an account? LOG IN',
+                    style: GoogleFonts.inter(
+                      fontSize: 15,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.grey,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
   }
 
- Widget _buildTextField(IconData icon, String hintText, {bool obscureText = false}) {
-  return Padding(
-    padding: EdgeInsets.only(bottom: 10,),
-    child: TextField(
-      obscureText: obscureText,
-      decoration: InputDecoration(
-        filled: true,
-        fillColor: Colors.transparent, 
-        prefixIcon: Icon(icon, color: Colors.black),
-        hintText: hintText,
-        hintStyle: TextStyle(color: Colors.grey),
-        
+  // valid text field with notice
+  Widget _buildValidatedTextField({
+    required TextEditingController controller,
+    required IconData icon,
+    required String hintText,
+    required String? Function(String?) validator,
+    bool obscureText = false,
+  }) {
+    return Padding(
+      padding: EdgeInsets.only(bottom: 10,),
+      child: TextFormField(
+        controller: controller,
+        obscureText: obscureText,
+        validator: validator,
+        decoration: InputDecoration(
+          filled: true,
+          fillColor: Colors.transparent,
+          prefixIcon: Icon(icon, color: Colors.black),
+          hintText: hintText,
+          hintStyle: TextStyle(color: Colors.grey),
+          errorStyle: TextStyle(color: Colors.red),
+          border: UnderlineInputBorder(),
         ),
-    ),
-      );
-    
-    
-  
-}
+      ),
+    );
+  }
+
+  // password field 
+  Widget _buildPasswordField({
+    required TextEditingController controller,
+    required String hintText,
+    required bool obscureText,
+    required VoidCallback toggleVisibility,
+    required String? Function(String?) validator,
+  }) {
+    return Padding(
+      padding: EdgeInsets.only(bottom: 10,),
+      child: TextFormField(
+        controller: controller,
+        obscureText: obscureText,
+        validator: validator,
+        decoration: InputDecoration(
+          filled: true,
+          fillColor: Colors.transparent,
+          prefixIcon: Icon(Icons.lock, color: Colors.black),
+          suffixIcon: IconButton(
+            icon: Icon(
+              obscureText ? Icons.visibility : Icons.visibility_off,
+              color: Colors.black54,
+            ),
+            onPressed: toggleVisibility,
+          ),
+          hintText: hintText,
+          hintStyle: TextStyle(color: Colors.grey),
+          errorStyle: TextStyle(color: Colors.red),
+          border: UnderlineInputBorder(),
+        ),
+      ),
+    );
+  }
 }

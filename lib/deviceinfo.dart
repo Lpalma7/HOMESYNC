@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:homesync/schedule.dart';
 
 class deviceinfo extends StatefulWidget {
   final String deviceName;
@@ -155,29 +154,6 @@ class deviceinfoState extends State<deviceinfo> {
               ),
               
               SizedBox(height: 24),
-              
-              // Device Controls
-              Transform.translate(
-              offset: Offset(0, -15),
-              child: Text(
-                "Controls",
-                style: TextStyle(
-                  fontSize: 20,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-              ),
-              
-              Transform.translate(
-              offset: Offset(0, -10),
-             child: Row(
-                children: [
-                  _buildControlButton(Icons.power_settings_new, "Power", isDeviceOn ? Colors.blue : Colors.grey),
-                  SizedBox(width: 12),
-                  _buildControlButton(Icons.timer, "Schedule", Colors.orange),
-                ],
-              ),
-              ),
             ],
           ),
         ),
@@ -244,45 +220,6 @@ class deviceinfoState extends State<deviceinfo> {
     );
   }
   
-  Widget _buildControlButton(IconData icon, String label, Color color) { // control btn widget
-  return Expanded(
-    child: GestureDetector(
-      onTap: () {
-        if (label == "Power") {
-          setState(() {
-            isDeviceOn = !isDeviceOn;
-          });
-        } else if (label == "Schedule") {
-          Navigator.push(
-            context,
-            MaterialPageRoute(builder: (context) => Schedule()),
-          );
-        }
-      },
-      child: Container(
-        padding: EdgeInsets.symmetric(vertical: 16),
-        decoration: BoxDecoration(
-          color: color.withOpacity(0.1),
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: color.withOpacity(0.3), width: 1),
-        ),
-        child: Column(
-          children: [
-            Icon(icon, color: color, size: 28),
-            SizedBox(height: 8),
-            Text(
-              label,
-              style: GoogleFonts.inter(
-                color: color,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-          ],
-        ),
-      ),
-    ),
-  );
-}
   IconData _getIconForDevice(String deviceName) {
     if (deviceName.toLowerCase().contains("light")) {
       return Icons.light;

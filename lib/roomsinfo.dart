@@ -3,6 +3,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:homesync/adddevices.dart';
 import 'package:homesync/relay_state.dart';
 import 'package:homesync/databaseservice.dart';
+import 'package:homesync/room_data_manager.dart'; 
 
 class Roomsinfo extends StatefulWidget {
   final String RoomItem;
@@ -14,33 +15,13 @@ class Roomsinfo extends StatefulWidget {
 }
 
 class RoomsinfoState extends State<Roomsinfo> {
-  final Set<int> _selectedDevices = {};
   late List<Map<String, dynamic>> devices;
-
-  // Room-to-devices mapping
-  final Map<String, List<Map<String, dynamic>>> _roomDevices = {
-    'Kitchen': [
-      {'title': 'Kitchen Plug\n(Oven)', 'relay': 'relay1', 'icon': Icons.power},
-      {'title': 'Kitchen Area\nLight', 'relay': 'relay2', 'icon': Icons.light},
-    ],
-    'Living Room': [
-      {'title': 'Living Room\nLight', 'relay': 'relay3', 'icon': Icons.light},
-      {'title': 'Living Room Plug\n(Television)', 'relay': 'relay5', 'icon': Icons.power},
-    ],
-    'Bedroom': [
-      {'title': 'Bedroom Plug\n(Air-con)', 'relay': 'relay4', 'icon': Icons.power},
-      {'title': 'Bedroom\nLight', 'relay': 'relay6', 'icon': Icons.light},
-    ],
-    'Dining Area': [
-      {'title': 'Dining Area Plug\n(Refrigerator)', 'relay': 'relay7', 'icon': Icons.power},
-    ],
-  };
+  final RoomDataManager _roomDataManager = RoomDataManager(); // room data manager
 
   @override
   void initState() {
     super.initState();
-    // Initialize devices based on selected room
-    devices = _roomDevices[widget.RoomItem] ?? [];
+    devices = _roomDataManager.roomDevices[widget.RoomItem] ?? [];
     _fetchRelayStates();
   }
 
@@ -62,6 +43,9 @@ class RoomsinfoState extends State<Roomsinfo> {
       backgroundColor: const Color(0xFFE9E7E6),
       floatingActionButton: FloatingActionButton(
         onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (context) => AddDeviceScreen())),
+        backgroundColor: Colors.black,
+        foregroundColor: Colors.white,
+        child: const Icon(Icons.add),
       ),
       body: SafeArea(
         child: Padding(
@@ -86,71 +70,41 @@ class RoomsinfoState extends State<Roomsinfo> {
                 ),
               ),
               Expanded(
-                child: Stack(
-                  children: [
-                    GridView.builder(
-                      itemCount: devices.length,
-                      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                        crossAxisCount: 2,
-                        crossAxisSpacing: 10,
-                        mainAxisSpacing: 10,
-                      ),
-                      itemBuilder: (context, index) {
-                        final device = devices[index];
-                        final isSelected = _selectedDevices.contains(index);
-                        return GestureDetector(
-                          onLongPress: () => setState(() => _selectedDevices.contains(index) 
-                              ? _selectedDevices.remove(index) 
-                              : _selectedDevices.add(index)),
-                          onTap: () {
-                            setState(() {
-                              String relayPath = device['relay'];
-                              bool newState = !(RelayState.relayStates[relayPath] ?? false);
-                              RelayState.relayStates[relayPath] = newState;
-                              DatabaseService().updateDeviceData(relayPath, newState ? 1 : 0);
-                            });
-                          },
-                          child: Container(
-                            decoration: BoxDecoration(
-                              color: RelayState.relayStates[device['relay']]! 
-                                  ? Colors.black 
-                                  : Colors.white,
-                              border: Border.all(
-                                color: isSelected ? Colors.red : Colors.transparent,
-                                width: 3,
-                              ),
-                              borderRadius: BorderRadius.circular(10),
-                            ),
-                            child: DeviceCard(
-                              title: device['title'],
-                              isOn: RelayState.relayStates[device['relay']]!,
-                              icon: device['icon'],
-                            ),
-                          ),
-                        );
+                child: GridView.builder(
+                  itemCount: devices.length,
+                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: 2,
+                    crossAxisSpacing: 10,
+                    mainAxisSpacing: 10,
+                  ),
+                  itemBuilder: (context, index) {
+                    final device = devices[index];
+                    return GestureDetector(
+                      onTap: () {
+                        setState(() {
+                          String relayPath = device['relay'];
+                          bool newState = !(RelayState.relayStates[relayPath] ?? false);
+                          RelayState.relayStates[relayPath] = newState;
+                          DatabaseService().updateDeviceData(relayPath, newState ? 1 : 0);
+                        });
                       },
-                    ),
-                    if (_selectedDevices.isNotEmpty)
-                      Positioned(
-                        right: 20,
-                        bottom: 20,
-                        child: IconButton(
-                          icon: const Icon(Icons.delete, color: Colors.red, size: 50),
-                          onPressed: () {
-                            setState(() {
-                              List<int> indexes = _selectedDevices.toList()..sort((a, b) => b.compareTo(a));
-                              for (int index in indexes) {
-                                String relayPath = devices[index]['relay'];
-                                DatabaseService().delete(path: relayPath);
-                                RelayState.relayStates.remove(relayPath);
-                                devices.removeAt(index);
-                              }
-                              _selectedDevices.clear();
-                            });
-                          },
+                      child: Container(
+                        decoration: BoxDecoration(
+                          color: RelayState.relayStates[device['relay']]! 
+                              ? Colors.black 
+                              : Colors.white,
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: DeviceCard(
+                          applianceName: device['applianceName'] as String,
+                          roomName: device['roomName'] as String,
+                          deviceType: device['deviceType'] as String,
+                          isOn: RelayState.relayStates[device['relay']]!,
+                          icon: device['icon'],
                         ),
                       ),
-                  ],
+                    );
+                  },
                 ),
               ),
             ],
@@ -162,46 +116,117 @@ class RoomsinfoState extends State<Roomsinfo> {
 }
 
 class DeviceCard extends StatelessWidget {
-  final String title;
+  final String applianceName;
+  final String roomName;
+  final String deviceType;
   final bool isOn;
   final IconData icon;
 
   const DeviceCard({
     super.key,
-    required this.title,
+    required this.applianceName,
+    required this.roomName,
+    required this.deviceType,
     required this.isOn,
     required this.icon,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      decoration: BoxDecoration(
-        border: Border.all(
-          color: isOn ? Colors.white : Colors.black,
-          width: 3),
-      ),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(icon, color: isOn ? Colors.white : Colors.grey),
-          Text(
-            title,
-            textAlign: TextAlign.center,
-            style: GoogleFonts.inter(
-              color: isOn ? Colors.white : Colors.grey,
-              fontSize: 14,
+    return Stack(
+      children: [     // box switch container
+        Container(
+          width: 200,
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(
+              color: isOn ? Colors.white : Colors.black,
+              width: 4,
             ),
           ),
-          Text(
-            isOn ? 'ON' : 'Off',
-            style: TextStyle(
-              fontWeight: FontWeight.bold,
-              color: isOn ? Colors.white : Colors.grey,
+          padding: const EdgeInsets.all(12),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            crossAxisAlignment: CrossAxisAlignment.center, 
+            children: [
+              Icon(icon, color: isOn ? Colors.white : Colors.black, size: 35,),
+              const SizedBox(height: 1),
+              
+              // Appliance Name
+              Text(
+                applianceName,
+                textAlign: TextAlign.center,
+                style: GoogleFonts.inter(
+                  fontSize: 14,
+                  fontWeight: FontWeight.bold,
+                  color: isOn ? Colors.white : Colors.black,
+                ),
+              ),
+              
+              // Room Name
+              Text(
+                roomName,
+                textAlign: TextAlign.center,
+                style: GoogleFonts.inter(
+                  fontSize: 14,
+                  color: isOn ? Colors.white : Colors.black,
+                ),
+              ),
+              
+              // Device Type
+              Text(
+                deviceType,
+                textAlign: TextAlign.center,
+                style: GoogleFonts.inter(
+                  fontSize: 14,
+                  color: isOn ? Colors.white : Colors.black,
+                ),
+              ),
+              
+              const SizedBox(height: 1),
+              Text(  // status 
+                isOn ? 'ON' : 'OFF',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                  color: isOn ? Colors.white : Colors.black,
+                ),
+              ),
+            ],
+          ),
+        ),
+        
+        // Edit btn in corner
+        Positioned(
+          top: 10,
+          right: 9,
+          child: InkWell(
+            onTap: () {
+              Navigator.pushNamed(
+                context, 
+                '/schedule', 
+                arguments: {
+                  'applianceName': applianceName,
+                  'roomName': roomName,
+                  'deviceType': deviceType
+                }
+              );
+            },
+            child: Container(    
+              padding: EdgeInsets.all(4),
+              decoration: BoxDecoration(
+                color: isOn ? Colors.white30 : Colors.grey.withOpacity(0.3),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(
+                Icons.edit,
+                size: 16,
+                color: isOn ? Colors.white : Colors.black,
+              ),
             ),
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 }

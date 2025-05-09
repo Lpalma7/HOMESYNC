@@ -9,20 +9,19 @@ class AddDeviceScreen extends StatefulWidget {
 } 
 
 class _AddDeviceScreenState extends State<AddDeviceScreen> {
-  final TextEditingController deviceNameController = TextEditingController();
+  final TextEditingController applianceNameController = TextEditingController();
   final TextEditingController kwhController = TextEditingController();
   final TextEditingController roomController = TextEditingController();
-  final TextEditingController applianceController = TextEditingController();
-  
+  final TextEditingController socketController = TextEditingController();
   
   final _formKey = GlobalKey<FormState>();
 
   String deviceType = 'Light';
   String? selectedRoom;
-  List<String> rooms = ['Living Room', 'Kitchen','Bedroom','Dining Area'];
+  List<String> rooms = ['Living Area', 'Kitchen Area','Bedroom','Dining Area'];
   Map<String, IconData> roomIcons = {
-    'Living Room': Icons.living,
-    'Kitchen': Icons.kitchen,
+    'Living Area': Icons.living,
+    'Kitchen Area': Icons.kitchen,
     'Bedroom': Icons.bed,
     'Dining Area': Icons.dining,
   };
@@ -61,10 +60,10 @@ class _AddDeviceScreenState extends State<AddDeviceScreen> {
   IconData selectedIcon = Icons.device_hub;
 
   // validation errors
-  String? deviceNameError;
+  String? applianceNameError;
   String? kwhError;
   String? roomError;
-  String? applianceError;
+  String? socketError;
   String? timeError;
   String? daysError;
 
@@ -83,7 +82,7 @@ class _AddDeviceScreenState extends State<AddDeviceScreen> {
                 children: [
                   Align(
                     alignment: Alignment.topLeft,
-                    child: Transform.translate( //btn back
+                    child: Transform.translate( 
                       offset: Offset(0.0, 20), 
                       child: IconButton(
                         icon: Icon(Icons.arrow_back, size: 50, color: Colors.black), 
@@ -125,15 +124,15 @@ class _AddDeviceScreenState extends State<AddDeviceScreen> {
                   
                   // Required text 
                   _buildRequiredTextField(
-                    deviceNameController, 
-                    "Device Name", 
+                    applianceNameController, 
+                    "Appliance Name", 
                     Icons.device_hub,
-                    errorText: deviceNameError
+                    errorText: applianceNameError
                   ),
                   _buildRequiredTextField(
                     kwhController, 
                     "KWPH", 
-                    Icons.electrical_services, 
+                    Icons.energy_savings_leaf, 
                     keyboardType: TextInputType.number,
                     errorText: kwhError
                   ),
@@ -153,7 +152,7 @@ class _AddDeviceScreenState extends State<AddDeviceScreen> {
                               size: 30, 
                               color: Colors.black
                             ),
-                            labelText: 'Room *',
+                            labelText: 'Room',
                             labelStyle: GoogleFonts.jaldi(
                               textStyle: TextStyle(fontSize: 20),
                               color: Colors.black,
@@ -195,12 +194,12 @@ class _AddDeviceScreenState extends State<AddDeviceScreen> {
                   
                   SizedBox(height: 15),
                   
-                  // Device type dropdown
+                  // Device type dropdown 
                   DropdownButtonFormField<String>(
                     decoration: InputDecoration(
                       filled: true,
                       fillColor: Colors.white,
-                      labelText: 'Device Type *',
+                      labelText: 'Device Type',
                       labelStyle: GoogleFonts.jaldi(
                         textStyle: TextStyle(fontSize: 20),
                         color: Colors.black,
@@ -213,7 +212,7 @@ class _AddDeviceScreenState extends State<AddDeviceScreen> {
                       textStyle: TextStyle(fontSize: 18, color: Colors.black87),
                     ),
                     value: deviceType,
-                    items: ['Light', 'Plug'].map((type) {
+                    items: ['Light', 'Socket'].map((type) {
                       return DropdownMenuItem(
                         value: type,
                         child: Text(type),
@@ -224,21 +223,21 @@ class _AddDeviceScreenState extends State<AddDeviceScreen> {
                         deviceType = value!;
                         
                         if (deviceType == 'Light') {
-                          applianceError = null;
+                          socketError = null;
                         }
                       });
                     },
                   ),
                   
-                  // Required appliance
-                  if (deviceType == 'Plug') ...[
-                    SizedBox(height: 20),
+                  // Required socket input 
+                  if (deviceType == 'Socket') ...[
+                    SizedBox(height: 5),
                     _buildRequiredTextField(
-                      applianceController, 
-                      "Appliance", 
+                      socketController, 
+                      "Socket", 
                       Icons.electrical_services, 
-                      hint: "Enter appliance name",
-                      errorText: applianceError
+                      hint: "Enter socket name",
+                      errorText: socketError
                     ),
                   ],
 
@@ -333,7 +332,7 @@ class _AddDeviceScreenState extends State<AddDeviceScreen> {
                     ),
                   ),
                   
-                  // Required repeating days 
+                  // Require repeating days 
                   Padding(
                     padding: const EdgeInsets.symmetric(vertical: 8.0),
                     child: Column(
@@ -342,7 +341,7 @@ class _AddDeviceScreenState extends State<AddDeviceScreen> {
                         Row(
                           children: [
                             Text(
-                              'Repeating Days *',
+                              'Repeating Days',
                               style: TextStyle(
                                 fontSize: 16, 
                                 fontWeight: FontWeight.bold
@@ -371,7 +370,7 @@ class _AddDeviceScreenState extends State<AddDeviceScreen> {
                                   onSelected: (selected) {
                                     setState(() {
                                       selectedDays[day] = selected;
-                                      // Clear error 
+                                      
                                       if (selected) {
                                         daysError = null;
                                       }
@@ -443,7 +442,7 @@ class _AddDeviceScreenState extends State<AddDeviceScreen> {
           filled: true,
           fillColor: Colors.white,
           prefixIcon: Icon(icon, size: 30, color: Colors.black), 
-          labelText: '$label *',  
+          labelText: '$label',  
           labelStyle: GoogleFonts.jaldi(
             textStyle: TextStyle(fontSize: 20),
             color: Colors.grey,
@@ -467,7 +466,7 @@ class _AddDeviceScreenState extends State<AddDeviceScreen> {
   void _addRoomDialog() {    
     TextEditingController roomInput = TextEditingController();
 
-    showDialog(    // add room content
+    showDialog(    // room content
       context: context,
       builder: (_) => AlertDialog(
         backgroundColor: const Color(0xFFE9E7E6),
@@ -565,8 +564,8 @@ class _AddDeviceScreenState extends State<AddDeviceScreen> {
               Navigator.pop(context);
             },
             style: ButtonStyle(
-              backgroundColor: WidgetStateProperty.all(Colors.black),
-              foregroundColor: WidgetStateProperty.all(Colors.white),
+              backgroundColor: MaterialStateProperty.all(Colors.black),
+              foregroundColor: MaterialStateProperty.all(Colors.white),
             ),
             child: Text(
               'Add',
@@ -649,42 +648,83 @@ class _AddDeviceScreenState extends State<AddDeviceScreen> {
     }
   }
   
-
   void _validateAndSubmitDevice() {
     // Checking req field
-    if (deviceNameController.text.isEmpty || 
-        kwhController.text.isEmpty || 
-        selectedRoom == null || 
-        (deviceType == 'Plug' && applianceController.text.isEmpty) || 
-        startTime == null || 
-        endTime == null || 
-        !selectedDays.values.any((selected) => selected)) {
-      
-      // notice
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text("Please fill the information"),
-          backgroundColor: Colors.grey[900],
-          duration: Duration(seconds: 2),
-        ),
-      );
-      return;
+    bool isValid = true;
+    
+    if (applianceNameController.text.isEmpty) {
+      setState(() {
+        applianceNameError = "Appliance name is required";
+      });
+      isValid = false;
+    } else {
+      setState(() {
+        applianceNameError = null;
+      });
     }
     
+    if (kwhController.text.isEmpty) {
+      setState(() {
+        kwhError = "KWPH is required";
+      });
+      isValid = false;
+    } else {
+      setState(() {
+        kwhError = null;
+      });
+    }
     
+    if (selectedRoom == null) {
+      setState(() {
+        roomError = "Room is required";
+      });
+      isValid = false;
+    } else {
+      setState(() {
+        roomError = null;
+      });
+    }
+    
+    if (deviceType == 'Socket' && socketController.text.isEmpty) {
+      setState(() {
+        socketError = "Socket name is required";
+      });
+      isValid = false;
+    } else {
+      setState(() {
+        socketError = null;
+      });
+    }
+    
+    if (startTime == null || endTime == null) {
+      setState(() {
+        timeError = "Start and end times are required";
+      });
+      isValid = false;
+    } else {
+      setState(() {
+        timeError = null;
+      });
+    }
+    
+    if (!selectedDays.values.any((selected) => selected)) {
+      setState(() {
+        daysError = "At least one day must be selected";
+      });
+      isValid = false;
+    } else {
+      setState(() {
+        daysError = null;
+      });
+    }
     _submitDevice();
-  
-   
-
-    Future.delayed(Duration(seconds: 2), () {
-      Navigator.of(context).pop();
-    });
+    Navigator.of(context).pop();
   }
   
   void _submitDevice() {
     // all data
     final Map<String, dynamic> deviceData = {
-      "name": deviceNameController.text,
+      "name": applianceNameController.text,
       "type": deviceType,
       "kwh": double.parse(kwhController.text),
       "room": selectedRoom,
@@ -697,8 +737,12 @@ class _AddDeviceScreenState extends State<AddDeviceScreen> {
           .toList(),
     };
     
-    if (deviceType == 'Plug') {
-      deviceData["appliance"] = applianceController.text;
+    if (deviceType == 'Socket') {
+      deviceData["socket"] = socketController.text;
+      // relay here
+      print("Connecting to relay: ${socketController.text}");
     }
+    print("Device added: $deviceData");
+    
   }
 }

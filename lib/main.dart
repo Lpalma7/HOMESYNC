@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:homesync/deviceinfo.dart';
 import 'package:homesync/welcome_screen.dart';
 import 'package:homesync/signup_screen.dart';
 import 'package:homesync/login_screen.dart';
@@ -19,6 +20,7 @@ import 'package:firebase_core/firebase_core.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp(
+          name: "homeautomation",
     options: const FirebaseOptions(
       apiKey: "258697759332",
       appId: "1:258697759332:ios:7620bdfd38bcb3d13b2d71",
