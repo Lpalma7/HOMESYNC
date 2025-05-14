@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart'; // Import Firestore
 import 'package:homesync/homepage_screen.dart';
 import 'package:homesync/login_screen.dart';
 import 'package:homesync/welcome_screen.dart';
@@ -219,13 +221,67 @@ class _SignUpScreenState extends State<SignUpScreen> {
               Transform.translate(
                 offset: Offset(0, -9),
                 child: ElevatedButton(
-                  onPressed: () {
+                  onPressed: () async {
                     if (_formKey.currentState!.validate()) {
-          
-                      Navigator.pushReplacement(
-                        context,
-                        MaterialPageRoute(builder: (context) => HomepageScreen()),
-                      );
+                      // Code inside the if block was the duplicated code, it has been removed.
+                      // The actual logic for signup is below:
+                      try {
+                        UserCredential userCredential = await FirebaseAuth.instance.createUserWithEmailAndPassword(
+                          email: _emailController.text.trim(),
+                          password: _passwordController.text.trim(),
+                        );
+
+                        // Add user information to Firestore
+                        // This uses the new path /users/{uid}
+                        await FirebaseFirestore.instance.collection('users').doc(userCredential.user!.uid).set({
+                          'email': _emailController.text.trim(),
+                          'username': _usernameController.text.trim(),
+                          'address': _addressController.text.trim(),
+                          'createdAt': Timestamp.now(), // Optional: add a timestamp
+                        });
+
+                        // Create initial subcollections for the new user
+                        final userDocRef = FirebaseFirestore.instance.collection('users').doc(userCredential.user!.uid);
+
+                        // Create an empty 'appliances' subcollection (or with default data if needed)
+                        // Example: Adding a placeholder document to ensure the collection exists
+                        // await userDocRef.collection('appliances').doc('initial_placeholder').set({'info': 'Appliances collection created'});
+                        // For now, we'll just ensure the user document is created.
+                        // The logic to add actual appliances will be in adddevices.dart or similar.
+
+                        // Create an empty 'personal_information' subcollection
+                        // await userDocRef.collection('personal_information').doc('details').set({'info': 'Personal info collection created'});
+
+                        // Create an empty 'usage' subcollection
+                        // await userDocRef.collection('usage').doc('summary').set({'info': 'Usage collection created'});
+
+
+                        // Navigate to the next screen upon successful signup
+                        if (mounted) { // Check if the widget is still in the tree
+                          Navigator.pushReplacement(
+                            context,
+                            MaterialPageRoute(builder: (context) => HomepageScreen()),
+                          );
+                        }
+                      } on FirebaseAuthException catch (e) {
+                        if (mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text(e.message ?? 'An error occurred during signup.'),
+                              backgroundColor: Colors.red,
+                            ),
+                          );
+                        }
+                      } catch (e) {
+                        if (mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text('An unexpected error occurred: ${e.toString()}'),
+                              backgroundColor: Colors.red,
+                            ),
+                          );
+                        }
+                      }
                     }
                   },
                   style: ElevatedButton.styleFrom(
@@ -247,7 +303,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
                   ),
                 ),
               ),
-  
+
               Transform.translate(
                 offset: Offset(0, 5),
                 child: TextButton(
@@ -301,7 +357,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
     );
   }
 
-  // password field 
+  // password field
   Widget _buildPasswordField({
     required TextEditingController controller,
     required String hintText,

@@ -1,40 +1,184 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:homesync/adddevices.dart';
-import 'package:homesync/relay_state.dart';
+import 'package:homesync/editdevice.dart'; // Import EditDeviceScreen
+import 'package:homesync/relay_state.dart'; // Re-adding for relay state management
 import 'package:homesync/databaseservice.dart';
-import 'package:homesync/room_data_manager.dart'; 
+import 'package:homesync/room_data_manager.dart'; // Re-adding for room data management
+import 'package:homesync/devices_screen.dart'; // Import DeviceCard from devices_screen.dart
+import 'dart:async';
+import 'package:cloud_firestore/cloud_firestore.dart'; // For QueryDocumentSnapshot
+import 'package:firebase_auth/firebase_auth.dart'; // For user authentication
 
 class Roomsinfo extends StatefulWidget {
-  final String RoomItem;
+  final String roomItem; // Renamed for clarity (original: RoomItem)
 
-  const Roomsinfo({super.key, required this.RoomItem});
+  const Roomsinfo({super.key, required this.roomItem});
 
   @override
   State<Roomsinfo> createState() => RoomsinfoState();
 }
 
 class RoomsinfoState extends State<Roomsinfo> {
-  late List<Map<String, dynamic>> devices;
   final RoomDataManager _roomDataManager = RoomDataManager(); // room data manager
+  StreamSubscription? _relayStateSubscription; // Add stream subscription
+  final DatabaseService _dbService = DatabaseService();
+  StreamSubscription? _appliancesSubscription;
+  List<QueryDocumentSnapshot<Map<String, dynamic>>> _roomDevices = [];
+  String _roomType = 'Unknown Type'; // State variable for room type
 
   @override
   void initState() {
     super.initState();
-    devices = _roomDataManager.roomDevices[widget.RoomItem] ?? [];
-    _fetchRelayStates();
+    _listenForRelayStateChanges(); // Start listening for relay changes
+    _listenToRoomAppliances();
+    _fetchRoomType(); // Fetch room type
   }
 
-  Future<void> _fetchRelayStates() async {
-    DatabaseService dbService = DatabaseService();
-    for (var device in devices) {
-      String relayPath = device['relay'];
-      Map<String, dynamic>? data = await dbService.read(path: relayPath);
-      if (data != null && data['state'] != null) {
-        RelayState.relayStates[relayPath] = data['state'] == 1;
+  @override
+  void dispose() {
+    _relayStateSubscription?.cancel(); // Cancel the relay subscription
+    _appliancesSubscription?.cancel();
+    super.dispose();
+  }
+
+  void _fetchRoomType() async {
+    final roomDetails = await _roomDataManager.fetchRoomDetails(widget.roomItem);
+    if (mounted && roomDetails != null) {
+      setState(() {
+        _roomType = roomDetails['roomType'] as String? ?? 'Unknown Type';
+      });
+    }
+  }
+
+  void _listenToRoomAppliances() {
+    _appliancesSubscription?.cancel();
+    
+    // First check if the user is authenticated
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) {
+      print("User not authenticated. Cannot fetch appliances.");
+      setState(() {
+        _roomDevices = [];
+      });
+      return;
+    }
+    
+    print("Authenticated user: ${user.email}");
+    print("Fetching devices for room: ${widget.roomItem}"); // Log the room name being filtered
+    
+    // Access the user-specific 'appliances' subcollection and filter by room name
+    _appliancesSubscription = FirebaseFirestore.instance
+        .collection('users')
+        .doc(user.uid) // Use the current user's UID
+        .collection('appliances')
+        .where('roomName', isEqualTo: widget.roomItem) // Filter by room name
+        .snapshots()
+        .listen((snapshot) {
+      if (mounted) {
+        setState(() {
+          _roomDevices = snapshot.docs;
+          
+          print("Found ${_roomDevices.length} devices for room ${widget.roomItem}");
+          print("Device fields: applianceName, applianceStatus, deviceType, icon, roomName");
+          
+          // Log the devices for debugging, including their roomName
+          for (var doc in _roomDevices) {
+            final data = doc.data();
+            print("Fetched Device: ${data['applianceName']} - Room: ${data['roomName']} - Status: ${data['applianceStatus']}");
+          }
+        });
+      }
+    }, onError: (error) {
+      print("Error listening to room appliances for ${widget.roomItem}: $error");
+      if (mounted) {
+        setState(() {
+          _roomDevices = [];
+        });
+      }
+    });
+  }
+
+  void _listenForRelayStateChanges() {
+    // Use Firestore to listen for relay state changes
+    for (String relay in RelayState.relayStates.keys) {
+      _relayStateSubscription = FirebaseFirestore.instance
+          .collection('relay_states')
+          .doc(relay)
+          .snapshots()
+          .listen((snapshot) {
+            if (snapshot.exists && snapshot.data() != null) {
+              final data = snapshot.data()!;
+              if (data['state'] != null) {
+                setState(() {
+                  RelayState.relayStates[relay] = data['state'] as int;
+                  print("Updated relay state: $relay = ${data['state']}");
+                });
+              }
+            } else {
+              // If document doesn't exist, create it with default state (0 = OFF)
+              FirebaseFirestore.instance
+                  .collection('relay_states')
+                  .doc(relay)
+                  .set({'state': 0});
+            }
+          }, onError: (error) {
+            print("Error listening to relay state for $relay: $error");
+          });
+    }
+  }
+
+  Future<void> _toggleDeviceStatus(String applianceId, String currentStatus) async {
+    // Check if master switch is ON
+    if (RelayState.relayStates['relay10'] == 0) {
+      // If master switch is OFF, do nothing and show a message
+      if (mounted) {
+         ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text("Cannot toggle device when master power is OFF")),
+        );
+      }
+      return;
+    }
+
+    final newStatus = currentStatus == 'ON' ? 'OFF' : 'ON';
+    try {
+      print("Toggling device $applianceId from $currentStatus to $newStatus in room ${widget.roomItem}");
+      
+      // Get the relay associated with this appliance
+      final deviceDoc = _roomDevices.firstWhere((doc) => doc.id == applianceId);
+      final deviceData = deviceDoc.data();
+      final String relayKey = deviceData['relay'] as String? ?? '';
+      
+      if (relayKey.isNotEmpty) {
+        // Update relay state in Firestore
+        int newRelayState = newStatus == 'ON' ? 1 : 0;
+        RelayState.relayStates[relayKey] = newRelayState;
+        
+        print("Updating relay state: $relayKey to $newRelayState");
+        await FirebaseFirestore.instance
+            .collection('relay_states')
+            .doc(relayKey)
+            .set({'state': newRelayState});
+      }
+      
+      // Update appliance status in Firestore directly in the user's subcollection
+      print("Updating appliance status in Firestore");
+      await FirebaseFirestore.instance
+          .collection('users')
+          .doc(FirebaseAuth.instance.currentUser!.uid) // Use the current user's UID
+          .collection('appliances')
+          .doc(applianceId)
+          .update({'applianceStatus': newStatus});
+          
+      print("Device $applianceId toggled successfully");
+    } catch (e) {
+      print("Error toggling device $applianceId in room ${widget.roomItem}: $e");
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text("Failed to update $applianceId: ${e.toString()}")),
+        );
       }
     }
-    setState(() {});
   }
 
   @override
@@ -42,7 +186,13 @@ class RoomsinfoState extends State<Roomsinfo> {
     return Scaffold(
       backgroundColor: const Color(0xFFE9E7E6),
       floatingActionButton: FloatingActionButton(
-        onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (context) => AddDeviceScreen())),
+        onPressed: () {
+          // When adding a device from a room screen, you might pre-fill the roomName
+          Navigator.push(
+            context,
+            MaterialPageRoute(builder: (context) => AddDeviceScreen(initialRoomName: widget.roomItem)),
+          );
+        },
         backgroundColor: Colors.black,
         foregroundColor: Colors.white,
         child: const Icon(Icons.add),
@@ -61,7 +211,7 @@ class RoomsinfoState extends State<Roomsinfo> {
                       onPressed: () => Navigator.pop(context),
                     ),
                     Text(
-                      widget.RoomItem,
+                      widget.roomItem,
                       style: GoogleFonts.jaldi(
                         textStyle: const TextStyle(fontSize: 23, fontWeight: FontWeight.bold),
                       ),
@@ -70,163 +220,85 @@ class RoomsinfoState extends State<Roomsinfo> {
                 ),
               ),
               Expanded(
-                child: GridView.builder(
-                  itemCount: devices.length,
-                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                    crossAxisCount: 2,
-                    crossAxisSpacing: 10,
-                    mainAxisSpacing: 10,
-                  ),
-                  itemBuilder: (context, index) {
-                    final device = devices[index];
-                    return GestureDetector(
-                      onTap: () {
-                        setState(() {
-                          String relayPath = device['relay'];
-                          bool newState = !(RelayState.relayStates[relayPath] ?? false);
-                          RelayState.relayStates[relayPath] = newState;
-                          DatabaseService().updateDeviceData(relayPath, newState ? 1 : 0);
-                        });
-                      },
-                      child: Container(
-                        decoration: BoxDecoration(
-                          color: RelayState.relayStates[device['relay']]! 
-                              ? Colors.black 
-                              : Colors.white,
-                          borderRadius: BorderRadius.circular(10),
+                child: _roomDevices.isEmpty
+                    ? Center(child: Text("No devices found in ${widget.roomItem}.",
+                        style: GoogleFonts.inter(
+                          fontSize: 16,
+                          color: Colors.grey[700],
                         ),
-                        child: DeviceCard(
-                          applianceName: device['applianceName'] as String,
-                          roomName: device['roomName'] as String,
-                          deviceType: device['deviceType'] as String,
-                          isOn: RelayState.relayStates[device['relay']]!,
-                          icon: device['icon'],
+                      ))
+                    : GridView.builder(
+                        padding: const EdgeInsets.only(top: 20, bottom: 70),
+                        itemCount: _roomDevices.length,
+                        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                          crossAxisCount: 2,
+                          crossAxisSpacing: 10,
+                          mainAxisSpacing: 10,
                         ),
+                        itemBuilder: (context, index) {
+                          final deviceDoc = _roomDevices[index];
+                          final deviceData = deviceDoc.data();
+                          final String applianceId = deviceDoc.id;
+                          final String relayKey = deviceData['relay'] as String? ?? '';
+
+                          // Extract all required fields from Firestore
+                          final String applianceName = deviceData['applianceName'] as String? ?? 'Unknown Device';
+                          final String roomName = deviceData['roomName'] as String? ?? 'Unknown Room';
+                          final String deviceType = deviceData['deviceType'] as String? ?? 'Unknown Type';
+                          final String applianceStatus = deviceData['applianceStatus'] as String? ?? 'OFF';
+                          final bool isOn = applianceStatus == 'ON';
+                          final int iconCodePoint = (deviceData['icon'] is int) ? deviceData['icon'] as int : Icons.devices.codePoint;
+
+                          // Get the master switch state from RelayState
+                          final bool masterSwitchIsOn = RelayState.relayStates['relay10'] == 1;
+
+                          return GestureDetector(
+                            onTap: () {
+                              _toggleDeviceStatus(applianceId, applianceStatus);
+                            },
+                            onLongPress: () {
+                              Navigator.pushNamed(
+                                context,
+                                '/deviceinfo',
+                                arguments: {
+                                  'applianceId': applianceId,
+                                  'deviceName': applianceName,
+                                },
+                              );
+                            },
+                            child: Container(
+                              decoration: BoxDecoration(
+                                // Use the same color logic as in devices_screen.dart
+                                color: masterSwitchIsOn && isOn ? Colors.black : Colors.white,
+                                borderRadius: BorderRadius.circular(10),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: Colors.grey.withOpacity(0.3),
+                                    spreadRadius: 1,
+                                    blurRadius: 3,
+                                    offset: Offset(0, 2),
+                                  )
+                                ]
+                              ),
+                              child: DeviceCard( // Use the DeviceCard from devices_screen.dart
+                                applianceId: applianceId,
+                                applianceName: applianceName,
+                                roomName: roomName,
+                                deviceType: deviceType,
+                                isOn: isOn, // Pass individual device state
+                                icon: IconData(iconCodePoint, fontFamily: 'MaterialIcons'),
+                                applianceStatus: applianceStatus, // Pass applianceStatus
+                                masterSwitchIsOn: masterSwitchIsOn, // Pass master switch state
+                              ),
+                            ),
+                          );
+                        },
                       ),
-                    );
-                  },
-                ),
               ),
             ],
           ),
         ),
       ),
-    );
-  }
-}
-
-class DeviceCard extends StatelessWidget {
-  final String applianceName;
-  final String roomName;
-  final String deviceType;
-  final bool isOn;
-  final IconData icon;
-
-  const DeviceCard({
-    super.key,
-    required this.applianceName,
-    required this.roomName,
-    required this.deviceType,
-    required this.isOn,
-    required this.icon,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Stack(
-      children: [     // box switch container
-        Container(
-          width: 200,
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(10),
-            border: Border.all(
-              color: isOn ? Colors.white : Colors.black,
-              width: 4,
-            ),
-          ),
-          padding: const EdgeInsets.all(12),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            crossAxisAlignment: CrossAxisAlignment.center, 
-            children: [
-              Icon(icon, color: isOn ? Colors.white : Colors.black, size: 35,),
-              const SizedBox(height: 1),
-              
-              // Appliance Name
-              Text(
-                applianceName,
-                textAlign: TextAlign.center,
-                style: GoogleFonts.inter(
-                  fontSize: 14,
-                  fontWeight: FontWeight.bold,
-                  color: isOn ? Colors.white : Colors.black,
-                ),
-              ),
-              
-              // Room Name
-              Text(
-                roomName,
-                textAlign: TextAlign.center,
-                style: GoogleFonts.inter(
-                  fontSize: 14,
-                  color: isOn ? Colors.white : Colors.black,
-                ),
-              ),
-              
-              // Device Type
-              Text(
-                deviceType,
-                textAlign: TextAlign.center,
-                style: GoogleFonts.inter(
-                  fontSize: 14,
-                  color: isOn ? Colors.white : Colors.black,
-                ),
-              ),
-              
-              const SizedBox(height: 1),
-              Text(  // status 
-                isOn ? 'ON' : 'OFF',
-                style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                  color: isOn ? Colors.white : Colors.black,
-                ),
-              ),
-            ],
-          ),
-        ),
-        
-        // Edit btn in corner
-        Positioned(
-          top: 10,
-          right: 9,
-          child: InkWell(
-            onTap: () {
-              Navigator.pushNamed(
-                context, 
-                '/schedule', 
-                arguments: {
-                  'applianceName': applianceName,
-                  'roomName': roomName,
-                  'deviceType': deviceType
-                }
-              );
-            },
-            child: Container(    
-              padding: EdgeInsets.all(4),
-              decoration: BoxDecoration(
-                color: isOn ? Colors.white30 : Colors.grey.withOpacity(0.3),
-                shape: BoxShape.circle,
-              ),
-              child: Icon(
-                Icons.edit,
-                size: 16,
-                color: isOn ? Colors.white : Colors.black,
-              ),
-            ),
-          ),
-        ),
-      ],
     );
   }
 }

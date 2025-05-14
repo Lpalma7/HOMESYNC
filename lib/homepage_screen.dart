@@ -381,22 +381,24 @@ Widget _buildNavButton(String title, bool isSelected, int index) { // nav bar fu
           child: Text('Devices',
               style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
         ),
-        _buildDeviceItem('Kitchen Plug', '24.4 kWh', Icons.power),
-        _buildDeviceItem('Bedroom Light', '14.9 kWh', Icons.light),
-        _buildDeviceItem('Living Room Plug', '24.4 kWh', Icons.power),
+        // TODO: Replace placeholder IDs with actual appliance IDs from Firestore
+        _buildDeviceItem('kitchen_plug_1', 'Kitchen Plug', '24.4 kWh', Icons.power),
+        _buildDeviceItem('bedroom_light_1', 'Bedroom Light', '14.9 kWh', Icons.lightbulb_outline),
+        _buildDeviceItem('living_room_plug_1', 'Living Room Plug', '24.4 kWh', Icons.power),
       ],
     );
   }
 
   /////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-Widget _buildDeviceItem(String name, String usage, IconData icon) { // device settings
+Widget _buildDeviceItem(String id, String name, String usage, IconData icon) { // device settings // Added id parameter
   return GestureDetector(
     onTap: () {
       Navigator.push(
         context,
-        MaterialPageRoute(builder: (context) => deviceinfo(
-          deviceName: name,
-          deviceUsage: usage,
+        MaterialPageRoute(builder: (context) => DeviceInfoScreen( // Changed to DeviceInfoScreen
+          applianceId: id, // Pass applianceId
+          initialDeviceName: name,
+          // initialDeviceUsage: usage, // Usage will be fetched from Firestore by DeviceInfoScreen
         )),
       );
     },

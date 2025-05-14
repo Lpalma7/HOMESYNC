@@ -4,16 +4,15 @@ import 'package:homesync/databaseservice.dart';
 // Import RoomDataManager
 import 'package:cloud_firestore/cloud_firestore.dart'; // Import Firestore
 
-class AddDeviceScreen extends StatefulWidget {
-  final Map<String, dynamic>? deviceData; // Optional device data for editing
-  final String? initialRoomName; // New optional parameter
-  const AddDeviceScreen({super.key, this.deviceData, this.initialRoomName});
+class EditDeviceScreen extends StatefulWidget {
+  final String applianceId; // Required appliance ID for editing
+  const EditDeviceScreen({super.key, required this.applianceId});
 
   @override
-  _AddDeviceScreenState createState() => _AddDeviceScreenState();
+  _EditDeviceScreenState createState() => _EditDeviceScreenState();
 }
 
-class _AddDeviceScreenState extends State<AddDeviceScreen> {
+class _EditDeviceScreenState extends State<EditDeviceScreen> {
   // Add a list of available relays
   List<String> relays = List.generate(9, (index) => 'relay${index + 1}');
 
@@ -80,41 +79,60 @@ class _AddDeviceScreenState extends State<AddDeviceScreen> {
   void initState() {
     super.initState();
     _fetchRoomsFromFirestore();
-    
-    if (widget.deviceData != null) {
-      isEditing = true;
-      // Populate fields with existing device data
-      // Assuming widget.deviceData contains the 'id' (applianceId) from Firestore
-      final String? editingId = widget.deviceData!['id'] as String?;
-      // We'll use editingId to call DatabaseService methods if needed for update/delete.
-      // For now, the main concern is addDevice.
+    _fetchDeviceData(); // Fetch device data for editing
+  }
 
-      applianceNameController.text = widget.deviceData!['applianceName'] as String;
-      kwhController.text = (widget.deviceData!['kwh'] ?? 0.0).toString();
-      selectedRoom = widget.deviceData!['roomName'] as String?;
-      deviceType = widget.deviceData!['deviceType'] as String? ?? 'Light';
-      selectedRelay = widget.deviceData!['relay'] as String?;
-      selectedIcon = IconData(widget.deviceData!['icon'] as int? ?? Icons.device_hub.codePoint, fontFamily: 'MaterialIcons');
+  void _fetchDeviceData() async {
+    try {
+      final deviceData = await DatabaseService().getApplianceData(widget.applianceId);
+      if (deviceData != null) {
+        setState(() {
+          isEditing = true;
+          applianceNameController.text = deviceData['applianceName'] as String;
+          kwhController.text = (deviceData['kwh'] ?? 0.0).toString();
+          selectedRoom = deviceData['roomName'] as String?;
+          deviceType = deviceData['deviceType'] as String? ?? 'Light';
+          selectedRelay = deviceData['relay'] as String?;
+          selectedIcon = IconData(deviceData['icon'] as int? ?? Icons.device_hub.codePoint, fontFamily: 'MaterialIcons');
 
+          // Parse start and end times
+          final startTimeString = deviceData['startTime'] as String?;
+          final endTimeString = deviceData['endTime'] as String?;
+          if (startTimeString != null) {
+            final startTimeParts = startTimeString.split(':');
+            startTime = TimeOfDay(hour: int.parse(startTimeParts[0]), minute: int.parse(startTimeParts[1]));
+          }
+          if (endTimeString != null) {
+            final endTimeParts = endTimeString.split(':');
+            endTime = TimeOfDay(hour: int.parse(endTimeParts[0]), minute: int.parse(endTimeParts[1]));
+          }
 
-      // Parse start and end times
-      final startTimeString = widget.deviceData!['startTime'] as String;
-      final endTimeString = widget.deviceData!['endTime'] as String;
-      final startTimeParts = startTimeString.split(':');
-      final endTimeParts = endTimeString.split(':');
-      startTime = TimeOfDay(hour: int.parse(startTimeParts[0]), minute: int.parse(startTimeParts[1]));
-      endTime = TimeOfDay(hour: int.parse(endTimeParts[0]), minute: int.parse(endTimeParts[1]));
-
-      // Populate selected days
-      final daysList = List<String>.from(widget.deviceData!['days'] as List);
-      for (var day in selectedDays.keys) {
-        selectedDays[day] = daysList.contains(day);
+          // Populate selected days
+          final daysList = List<String>.from(deviceData['days'] as List? ?? []);
+          for (var day in selectedDays.keys) {
+            selectedDays[day] = daysList.contains(day);
+          }
+        });
+      } else {
+        // Handle case where device data is not found
+        print("Device with ID ${widget.applianceId} not found.");
+        // Optionally show an error message and pop the screen
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text("Device not found."))
+          );
+          Navigator.of(context).pop();
+        }
       }
-    } else if (widget.initialRoomName != null) {
-      // If not editing and initialRoomName is provided, set it
-      selectedRoom = widget.initialRoomName;
-      // Optionally, update the roomController if you use it to display the room
-      // roomController.text = widget.initialRoomName!;
+    } catch (e) {
+      print("Error fetching device data: $e");
+      // Handle error fetching data
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text("Error loading device data: ${e.toString()}"))
+        );
+        Navigator.of(context).pop();
+      }
     }
   }
 
@@ -191,62 +209,52 @@ class _AddDeviceScreenState extends State<AddDeviceScreen> {
                   SizedBox(height: 10),
                   
                   // Required room
-                  Row(
-                    children: [
-                      Expanded(
-                        child: _isLoadingRooms
-                          ? Center(child: CircularProgressIndicator())
-                          : DropdownButtonFormField<String>(
-                              decoration: InputDecoration(
-                                filled: true,
-                                fillColor: Colors.white,
-                                prefixIcon: Icon(
-                                  selectedRoom != null ? (roomIcons[selectedRoom] ?? Icons.home) : Icons.home,
-                                  size: 30,
-                                  color: Colors.black
-                                ),
-                                labelText: 'Room',
-                                labelStyle: GoogleFonts.jaldi(
-                                  textStyle: TextStyle(fontSize: 20),
-                                  color: Colors.black,
-                                ),
-                                border: OutlineInputBorder(),
-                                errorText: roomError,
-                              ),
-                              dropdownColor: Colors.grey[200],
-                              style: GoogleFonts.jaldi(
-                                textStyle: TextStyle(fontSize: 18, color: Colors.black87),
-                              ),
-                              value: selectedRoom,
-                              items: rooms.isEmpty
-                                ? [DropdownMenuItem(value: 'No Rooms', child: Text('No Rooms Available'))]
-                                : rooms.map((room) {
-                                    return DropdownMenuItem(
-                                      value: room,
-                                      child: Text(room),
-                                    );
-                                  }).toList(),
-                              onChanged: (value) {
-                                if (value == 'No Rooms') return;
-                                setState(() {
-                                  selectedRoom = value;
-                                  roomError = null;
-                                });
-                              },
-                              validator: (value) {
-                                if (value == null || value.isEmpty || value == 'No Rooms') {
-                                  return "Room is required";
-                                }
-                                return null;
-                              },
-                            ),
+                  _isLoadingRooms
+                    ? Center(child: CircularProgressIndicator())
+                    : DropdownButtonFormField<String>(
+                        decoration: InputDecoration(
+                          filled: true,
+                          fillColor: Colors.white,
+                          prefixIcon: Icon(
+                            selectedRoom != null ? (roomIcons[selectedRoom] ?? Icons.home) : Icons.home,
+                            size: 30,
+                            color: Colors.black
+                          ),
+                          labelText: 'Room',
+                          labelStyle: GoogleFonts.jaldi(
+                            textStyle: TextStyle(fontSize: 20),
+                            color: Colors.black,
+                          ),
+                          border: OutlineInputBorder(),
+                          errorText: roomError,
+                        ),
+                        dropdownColor: Colors.grey[200],
+                        style: GoogleFonts.jaldi(
+                          textStyle: TextStyle(fontSize: 18, color: Colors.black87),
+                        ),
+                        value: selectedRoom,
+                        items: rooms.isEmpty
+                          ? [DropdownMenuItem(value: 'No Rooms', child: Text('No Rooms Available'))]
+                          : rooms.map((room) {
+                              return DropdownMenuItem(
+                                value: room,
+                                child: Text(room),
+                              );
+                            }).toList(),
+                        onChanged: (value) {
+                          if (value == 'No Rooms') return;
+                          setState(() {
+                            selectedRoom = value;
+                            roomError = null;
+                          });
+                        },
+                        validator: (value) {
+                          if (value == null || value.isEmpty || value == 'No Rooms') {
+                            return "Room is required";
+                          }
+                          return null;
+                        },
                       ),
-                      IconButton(
-                        icon: Icon(Icons.add, size: 30, color: Colors.black),
-                        onPressed: _addRoomDialog,
-                      )
-                    ],
-                  ),
                   
                   SizedBox(height: 15),
                   
@@ -572,125 +580,6 @@ class _AddDeviceScreenState extends State<AddDeviceScreen> {
  
   static IconData roomIconSelected = Icons.home;
 
-  void _addRoomDialog() {    
-    TextEditingController roomInput = TextEditingController();
-
-    showDialog(    // room content
-      context: context,
-      builder: (_) => AlertDialog(
-        backgroundColor: const Color(0xFFE9E7E6),
-        titleTextStyle: GoogleFonts.jaldi(
-          fontSize: 25,
-          fontWeight: FontWeight.bold,
-          color: Colors.black,
-        ),
-        title: Text('Add Room'),
-        content: StatefulBuilder(
-          builder: (BuildContext context, StateSetter setDialogState) {
-            return SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  TextField(
-                    controller: roomInput,
-                    style: GoogleFonts.inter(
-                      textStyle: TextStyle(fontSize: 17),
-                      color: Colors.black, 
-                    ),
-                    decoration: InputDecoration(
-                      filled: true,
-                      fillColor: Colors.white,
-                      border: OutlineInputBorder(),
-                      hintText: "Room name",
-                      hintStyle: GoogleFonts.inter(
-                        color: Colors.grey,
-                        fontSize: 15,
-                      ),
-                      prefixIcon: Icon(
-                        roomIconSelected,
-                        color: Colors.black,
-                        size: 24,
-                      ),
-                    ),
-                  ),
-                  SizedBox(height: 15),
-                  Text(
-                    'Select Icon',
-                    style: GoogleFonts.jaldi(
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.black,
-                    ),
-                  ),
-                  SizedBox(height: 5),
-                  Container(  // icon picker
-                    height: 200,
-                    width: double.maxFinite,
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: GridView.count(
-                      crossAxisCount: 4,
-                      shrinkWrap: true,
-                      children: [
-                        Icons.living, Icons.bed, Icons.kitchen, Icons.dining,
-                        Icons.bathroom, Icons.meeting_room, Icons.workspace_premium, Icons.chair,
-                        Icons.stairs, Icons.garage, Icons.yard, Icons.balcony,
-                      ].map((icon) {
-                        return IconButton(
-                          icon: Icon(
-                            icon, 
-                            color: roomIconSelected == icon ? Theme.of(context).colorScheme.secondary : Colors.black,
-                          ),
-                          onPressed: () {
-                            setDialogState(() {
-                              roomIconSelected = icon;
-                            });
-                          },
-                        );
-                      }).toList(),
-                    ),
-                  ),
-                ],
-              ),
-            );
-          }
-        ),
-        
-        actions: [
-          TextButton(  // room add btn
-            onPressed: () {
-              if (roomInput.text.isNotEmpty) {
-                // Add room to Firestore
-                _addRoomToFirestore(roomInput.text, roomIconSelected);
-                
-                setState(() {
-                  rooms.add(roomInput.text);
-                  selectedRoom = roomInput.text;
-                  roomIcons[roomInput.text] = roomIconSelected;
-                  roomError = null;
-                });
-              }
-              Navigator.pop(context);
-            },
-            style: ButtonStyle(
-              backgroundColor: WidgetStateProperty.all(Colors.black),
-              foregroundColor: WidgetStateProperty.all(Colors.white),
-            ),
-            child: Text(
-              'Add',
-              style: GoogleFonts.jaldi(
-                textStyle: TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
-                color: Colors.white,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
   void _pickIcon() { // icon picker
     showModalBottomSheet(
       context: context,
@@ -883,16 +772,7 @@ class _AddDeviceScreenState extends State<AddDeviceScreen> {
 
   void _updateDevice() async { // Made async
     final DatabaseService dbService = DatabaseService();
-    if (widget.deviceData == null || widget.deviceData!['id'] == null) {
-      print("Error: Cannot update device without an ID.");
-      if (mounted) {
-         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text("Error: Device ID not found for update."))
-        );
-      }
-      return;
-    }
-    final String applianceId = widget.deviceData!['id'] as String;
+    final String applianceId = widget.applianceId;
 
     // Data to update. Only include fields that are editable on this screen.
     // applianceStatus is typically handled by toggle switches, not directly set here unless intended.
@@ -937,17 +817,10 @@ class _AddDeviceScreenState extends State<AddDeviceScreen> {
 
   void _deleteDevice() async { // Made async
     final DatabaseService dbService = DatabaseService();
-    if (widget.deviceData == null || widget.deviceData!['id'] == null) {
-      print("Error: Cannot delete device without an ID.");
-       if (mounted) {
-         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text("Error: Device ID not found for deletion."))
-        );
-      }
-      return;
-    }
-    final String applianceId = widget.deviceData!['id'] as String;
-    final String applianceNameToDelete = widget.deviceData!['applianceName'] as String? ?? "Device";
+    final String applianceId = widget.applianceId;
+    // We need to fetch the device data to get the name for the confirmation dialog
+    final deviceData = await DatabaseService().getApplianceData(applianceId);
+    final String applianceNameToDelete = deviceData?['applianceName'] as String? ?? "Device";
 
     // Show a confirmation dialog before deleting
     bool? confirmDelete = await showDialog<bool>(
@@ -1039,14 +912,6 @@ class _AddDeviceScreenState extends State<AddDeviceScreen> {
         rooms = fetchedRooms;
         roomIcons = fetchedIcons;
         _isLoadingRooms = false;
-
-        // If initialRoomName is provided, select it
-        if (widget.initialRoomName != null && rooms.contains(widget.initialRoomName)) {
-          selectedRoom = widget.initialRoomName;
-        } else if (rooms.isNotEmpty) {
-          // If no initial room and rooms are available, select the first one
-          selectedRoom = rooms.first;
-        }
       });
 
       print("Fetched ${rooms.length} rooms from user's Rooms subcollection");
@@ -1058,38 +923,6 @@ class _AddDeviceScreenState extends State<AddDeviceScreen> {
         roomIcons = {};
         _isLoadingRooms = false;
       });
-    }
-  }
-
-  // Add a new room to Firestore
-  void _addRoomToFirestore(String roomName, IconData icon) async {
-    try {
-      final userId = DatabaseService().getCurrentUserId();
-      if (userId == null) {
-        print("User not authenticated. Cannot add room.");
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text("User not authenticated. Cannot add room."))
-        );
-        return;
-      }
-
-      final roomData = {
-        'roomName': roomName,
-        'icon': icon.codePoint,
-        'createdAt': FieldValue.serverTimestamp(),
-      };
-
-      await FirebaseFirestore.instance
-          .collection('users')
-          .doc(userId)
-          .collection('Rooms') // Add to the user-specific Rooms subcollection
-          .add(roomData);
-      print("Added room '$roomName' to user's Rooms subcollection");
-    } catch (e) {
-      print("Error adding room to user's subcollection: $e");
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("Room added locally but failed to save to database: ${e.toString()}"))
-      );
     }
   }
 }
