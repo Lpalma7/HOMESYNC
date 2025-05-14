@@ -3,7 +3,9 @@ import 'package:homesync/notification_screen.dart';
 import 'package:weather/weather.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:homesync/welcome_screen.dart';
-import 'package:homesync/room_data_manager.dart'; 
+import 'package:homesync/room_data_manager.dart';
+import 'package:cloud_firestore/cloud_firestore.dart'; // Import Firestore
+import 'package:firebase_auth/firebase_auth.dart'; // Import FirebaseAuth
 
 class Rooms extends StatefulWidget {
   const Rooms({super.key});
@@ -17,31 +19,8 @@ class RoomsState extends State<Rooms> {
   int _selectedIndex = 2;
   final RoomDataManager _roomDataManager = RoomDataManager(); // Initial manager
 
-  // given list
-  List<RoomItem> rooms = [
-    RoomItem(
-      title: 'Bedroom',
-      icon: Icons.bed,
-    ),
-    RoomItem(
-      title: 'Kitchen Area',
-      icon: Icons.kitchen,
-    ),
-    RoomItem(
-      title: 'Living Area',
-      icon: Icons.weekend,
-    ),
-    RoomItem(
-      title: 'Dining Area',
-      icon: Icons.dining,
-    ),
-  ];
-
-  // list
-  List<String> roomTypes = ['Living Area', 'Bedroom', 'Kitchen Area', 'Dining Area',];
-
   @override
-  Widget build(BuildContext context) {  // whole frame and add btn navi and design
+  Widget build(BuildContext context) {
     final screenSize = MediaQuery.of(context).size;
     return Scaffold(
       backgroundColor: const Color(0xFFE9E7E6),
@@ -139,8 +118,8 @@ class RoomsState extends State<Rooms> {
 
               const SizedBox(height: 1), // search bar
               SizedBox(
-                width: 355, 
-                height: 47, 
+                width: 355,
+                height: 47,
                 child: TextField(
                   decoration: InputDecoration(
                     hintText: 'Search',
@@ -161,22 +140,47 @@ class RoomsState extends State<Rooms> {
               /// Room List
               const SizedBox(height: 20),
               Expanded(
-                child: ListView.separated(
-                  itemCount: rooms.length,
-                  separatorBuilder: (context, index) => Divider(
-                    height: 1,
-                    color: Colors.grey[300],
-                  ),
-                  itemBuilder: (context, index) {
-                    return RoomListTile(
-                      room: rooms[index],
-                      onDelete: () {
-                        _deleteRoom(index);
-                      },
-                      onEdit: (newName) {
-                        _editRoomName(index, newName);
-                      },
-                    );
+                child: StreamBuilder<QuerySnapshot>(
+                  stream: FirebaseAuth.instance.currentUser != null
+                      ? FirebaseFirestore.instance
+                          .collection('users')
+                          .doc(FirebaseAuth.instance.currentUser!.uid) // Use the current user's UID
+                          .collection('Rooms') // Fetch from the user-specific Rooms subcollection
+                          .snapshots()
+                      : Stream.empty(), // Return an empty stream if user is not authenticated
+                  builder: (context, snapshot) {
+                    if (snapshot.hasError) {
+                      print("Error fetching rooms: ${snapshot.error}"); // Log the error
+                      return Center(child: Text('Error loading rooms: ${snapshot.error}'));
+                    }
+
+                    if (snapshot.connectionState == ConnectionState.waiting) {
+                      return Center(child: CircularProgressIndicator());
+                    }
+                    
+                    // Check if user is authenticated before accessing snapshot data
+                    if (FirebaseAuth.instance.currentUser == null) {
+                       return Center(child: Text('Please log in to view your rooms.'));
+                    }
+
+                    final List<RoomItem> rooms = snapshot.data!.docs.map((doc) {
+                      final data = doc.data() as Map<String, dynamic>;
+                      final roomName = data['roomName'] as String? ?? 'Unknown Room';
+                      final iconCodePoint = data['icon'] as int? ?? Icons.home.codePoint; // Default icon
+                      
+                      // We don't have appliance data here, so the appliances list will be empty
+                      return RoomItem(
+                        title: roomName,
+                        icon: IconData(iconCodePoint, fontFamily: 'MaterialIcons'),
+                        appliances: [], // Appliances list is not available from this stream
+                      );
+                    }).toList();
+
+                    if (rooms.isEmpty) {
+                      return Center(child: Text('No rooms found. Add a room to get started.'));
+                    }
+
+                    return _buildRoomsList(rooms);
                   },
                 ),
               ),
@@ -187,34 +191,118 @@ class RoomsState extends State<Rooms> {
     );
   }
 
-  void _deleteRoom(int index) {
-    final oldRoomName = rooms[index].title;
-    
-    setState(() {
-      rooms.removeAt(index);
+  void _deleteRoom(String roomName) async {
+    try {
+      final userId = FirebaseAuth.instance.currentUser?.uid;
+      if (userId == null) {
+        print("User not authenticated. Cannot delete room.");
+        return;
+      }
+
+      // Find the room document by roomName in the user's Rooms subcollection
+      final roomQuerySnapshot = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(userId)
+          .collection('Rooms')
+          .where('roomName', isEqualTo: roomName)
+          .limit(1)
+          .get();
+
+      if (roomQuerySnapshot.docs.isNotEmpty) {
+        final roomIdToDelete = roomQuerySnapshot.docs.first.id;
+        
+        // Delete the room document
+        await FirebaseFirestore.instance
+            .collection('users')
+            .doc(userId)
+            .collection('Rooms')
+            .doc(roomIdToDelete)
+            .delete();
+            
+        print('Deleted room: $roomName');
+      } else {
+        print('Room not found for deletion: $roomName');
+      }
+
+      // Also delete all devices associated with the room from the user's appliances subcollection
+      final deviceQuerySnapshot = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(userId)
+          .collection('appliances')
+          .where('roomName', isEqualTo: roomName)
+          .get();
+
+      final batch = FirebaseFirestore.instance.batch();
+      for (final doc in deviceQuerySnapshot.docs) {
+        batch.delete(doc.reference);
+      }
+      await batch.commit();
       
-      
-      _roomDataManager.roomDevices.remove(oldRoomName);
-    });
-  }
-  
-  // Updated to edit room name
-  void _editRoomName(int index, String newName) {
-    final oldRoomName = rooms[index].title;
-    
-   
-    setState(() {
-      rooms[index] = RoomItem(
-        title: newName,
-        icon: rooms[index].icon,
-      );
-    });
-    
-   
-    _roomDataManager.updateRoomName(oldRoomName, newName);
+      print('Deleted ${deviceQuerySnapshot.docs.length} devices associated with room: $roomName');
+
+    } catch (e) {
+      print('Error deleting room: $e');
+      // Handle error appropriately
+    }
   }
 
-  void _showAddRoomDialog(BuildContext context) {    
+  // Updated to edit room name
+  void _editRoomName(String oldName, String newName) async {
+    try {
+      final userId = FirebaseAuth.instance.currentUser?.uid;
+      if (userId == null) {
+        print("User not authenticated. Cannot edit room name.");
+        return;
+      }
+
+      // Find the room document by oldName in the user's Rooms subcollection
+      final roomQuerySnapshot = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(userId)
+          .collection('Rooms')
+          .where('roomName', isEqualTo: oldName)
+          .limit(1)
+          .get();
+
+      if (roomQuerySnapshot.docs.isNotEmpty) {
+        final roomIdToUpdate = roomQuerySnapshot.docs.first.id;
+        
+        // Update the room document with the new name
+        await FirebaseFirestore.instance
+            .collection('users')
+            .doc(userId)
+            .collection('Rooms')
+            .doc(roomIdToUpdate)
+            .update({'roomName': newName});
+            
+        print('Updated room name from $oldName to $newName');
+      } else {
+        print('Room not found for editing: $oldName');
+      }
+
+      // Also update the roomName field in all associated devices in the user's appliances subcollection
+      final deviceQuerySnapshot = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(userId)
+          .collection('appliances')
+          .where('roomName', isEqualTo: oldName)
+          .get();
+
+      final batch = FirebaseFirestore.instance.batch();
+      for (final doc in deviceQuerySnapshot.docs) {
+        batch.update(doc.reference, {'roomName': newName});
+      }
+      await batch.commit();
+      
+      print('Updated room name for ${deviceQuerySnapshot.docs.length} devices associated with room: $oldName');
+
+    } catch (e) {
+      print('Error editing room name: $e');
+      // Handle error appropriately
+    }
+  }
+
+  void _showAddRoomDialog(BuildContext context) {
     TextEditingController roomInput = TextEditingController();
     IconData roomIconSelected = Icons.home;
 
@@ -238,7 +326,7 @@ class RoomsState extends State<Rooms> {
                     controller: roomInput,
                     style: GoogleFonts.inter(
                       textStyle: TextStyle(fontSize: 17),
-                      color: Colors.black, 
+                      color: Colors.black,
                     ),
                     decoration: InputDecoration(
                       filled: true,
@@ -283,7 +371,7 @@ class RoomsState extends State<Rooms> {
                       ].map((icon) {
                         return IconButton(
                           icon: Icon(
-                            icon, 
+                            icon,
                             color: roomIconSelected == icon ? Theme.of(context).colorScheme.secondary : Colors.black,
                           ),
                           onPressed: () {
@@ -300,34 +388,62 @@ class RoomsState extends State<Rooms> {
             );
           }
         ),
-        
+
         actions: [
           TextButton(
-            onPressed: () {
+            onPressed: () async {
               if (roomInput.text.isNotEmpty) {
-                setState(() {
-                  final newRoomName = roomInput.text;
-                  
-                  if (!roomTypes.contains(newRoomName)) {
-                    roomTypes.add(newRoomName);
+                final newRoomName = roomInput.text;
+                final iconCodePoint = roomIconSelected.codePoint;
+
+                final userId = FirebaseAuth.instance.currentUser?.uid;
+                if (userId == null) {
+                  print("User not authenticated. Cannot add room.");
+                  if (mounted) {
+                     ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text("User not authenticated. Cannot add room."))
+                    );
                   }
-                  
-                  // Add room to list
-                  rooms.add(RoomItem(
-                    title: newRoomName,
-                    icon: roomIconSelected,
-                  ));
-                  
-                  if (!_roomDataManager.roomDevices.containsKey(newRoomName)) {
-                    _roomDataManager.roomDevices[newRoomName] = [];
+                  Navigator.pop(context);
+                  return;
+                }
+
+                // Add a room document to the user's Rooms subcollection
+                final roomData = {
+                  'roomName': newRoomName,
+                  'icon': iconCodePoint,
+                  'createdAt': FieldValue.serverTimestamp(),
+                };
+
+                try {
+                  await FirebaseFirestore.instance
+                      .collection('users')
+                      .doc(userId)
+                      .collection('Rooms') // Use the user-specific Rooms subcollection
+                      .add(roomData);
+
+                  print('Added room: $newRoomName to user $userId Rooms subcollection with auto-generated ID');
+
+                  if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text("Room '$newRoomName' added successfully!"))
+                    );
                   }
-                });
+
+                } catch (e) {
+                  print('Error adding room to user subcollection: $e');
+                  if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text("Failed to add room: ${e.toString()}"))
+                    );
+                  }
+                }
               }
               Navigator.pop(context);
             },
             style: ButtonStyle(
-              backgroundColor: MaterialStateProperty.all(Colors.black),
-              foregroundColor: MaterialStateProperty.all(Colors.white),
+              backgroundColor: WidgetStateProperty.all(Colors.black),
+              foregroundColor: WidgetStateProperty.all(Colors.white),
             ),
             child: Text(
               'Add',
@@ -404,8 +520,8 @@ class RoomsState extends State<Rooms> {
                         MaterialPageRoute(builder: (context) => NotificationScreen()),
                       );
                     },
-                  ),  
-          
+                  ),
+
                   const SizedBox(height: 15),
                   ListTile(
                     leading: const Padding(
@@ -470,43 +586,70 @@ class RoomsState extends State<Rooms> {
       ],
     );
   }
+  
+  // Helper method to build the rooms list
+  Widget _buildRoomsList(List<RoomItem> rooms) {
+    return ListView.separated(
+      itemCount: rooms.length,
+      separatorBuilder: (context, index) => Divider(
+        height: 1,
+        color: Colors.grey[300],
+      ),
+      itemBuilder: (context, index) {
+        return RoomListTile(
+          room: rooms[index],
+          onDelete: () {
+            _deleteRoom(rooms[index].title);
+          },
+          onEdit: (newName) {
+            _editRoomName(rooms[index].title, newName);
+          },
+        );
+      },
+    );
+  }
 }
 
-class RoomItem {     // room setting and function
+class RoomItem {
   final String title;
   final IconData icon;
+  final List<String> appliances;
 
   RoomItem({
     required this.title,
     required this.icon,
+    this.appliances = const [],
   });
 }
 
 class RoomListTile extends StatelessWidget {
   final RoomItem room;
   final VoidCallback onDelete;
-  final Function(String) onEdit; 
+  final Function(String) onEdit;
 
   const RoomListTile({
     super.key,
     required this.room,
     required this.onDelete,
-    required this.onEdit, 
+    required this.onEdit,
   });
 
   @override
   Widget build(BuildContext context) {
     final String title = room.title;
-   return GestureDetector(
-    onTap: () {
-      Navigator.pushNamed(context, '/roominfo', arguments: title);
-    }, 
-    onLongPress: () {
-      _showEditDialog(context); //edit
+    return GestureDetector(
+      onTap: () {
+        Navigator.pushNamed(context, '/roominfo', arguments: title);
+      },
+      onDoubleTap: () {
+        _showAppliancesDialog(context);
+      },
+      onLongPress: () {
+        _showEditDialog(context);
       },
       child: Container(
         padding: EdgeInsets.symmetric(vertical: 25, horizontal: 16),
-        color: Colors.transparent, 
+        color: Colors.transparent,
         child: Row(
           children: [
             Container(
@@ -542,11 +685,54 @@ class RoomListTile extends StatelessWidget {
       ),
     );
   }
+
+  // Show appliances in this room
+  void _showAppliancesDialog(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          backgroundColor: const Color(0xFFE9E7E6),
+          title: Text('Appliances in ${room.title}',
+            style: GoogleFonts.inter(fontWeight: FontWeight.bold)),
+          content: SizedBox(
+            width: double.maxFinite,
+            child: room.appliances.isEmpty
+              ? Text('No appliances in this room',
+                  style: GoogleFonts.inter())
+              : ListView.builder(
+                  shrinkWrap: true,
+                  itemCount: room.appliances.length,
+                  itemBuilder: (context, index) {
+                    return ListTile(
+                      leading: Icon(Icons.devices),
+                      title: Text(room.appliances[index],
+                        style: GoogleFonts.inter()),
+                    );
+                  },
+                ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.of(context).pop();
+              },
+              style: ButtonStyle(
+                backgroundColor: WidgetStateProperty.all(Colors.black),
+                foregroundColor: WidgetStateProperty.all(Colors.white),
+              ),
+              child: Text('Close', style: GoogleFonts.inter()),
+            ),
+          ],
+        );
+      },
+    );
+  }
   
   // edit name content
   void _showEditDialog(BuildContext context) {
     final TextEditingController nameController = TextEditingController(text: room.title);
-    
+
     showDialog(
       context: context,
       builder: (BuildContext context) {
@@ -582,6 +768,13 @@ class RoomListTile extends StatelessWidget {
                 backgroundColor: Colors.transparent,
               ),
               child: Text('Save', style: GoogleFonts.inter(color: Colors.black)),
+            ),
+            TextButton(
+              onPressed: () {
+                onDelete();
+                Navigator.of(context).pop();
+              },
+              child: Text('Delete', style: GoogleFonts.inter(color: Colors.red)),
             ),
           ],
         );

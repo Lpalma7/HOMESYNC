@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:homesync/forgot_password_screen.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:homesync/signup_screen.dart';
 import 'package:homesync/welcome_screen.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -229,12 +230,35 @@ class _LoginScreenState extends State<LoginScreen> {
               Transform.translate(
                 offset: Offset(0, -20),
                 child: ElevatedButton(
-                  onPressed: () {
+                  onPressed: () async {
                     if (_formKey.currentState!.validate()) {
-                      Navigator.pushReplacement(
-                        context,
-                        MaterialPageRoute(builder: (context) => HomepageScreen()),
-                      );
+                      try {
+                        await FirebaseAuth.instance.signInWithEmailAndPassword(
+                          email: _emailController.text.trim(),
+                          password: _passwordController.text.trim(),
+                        );
+                        // Navigate to the next screen upon successful login
+                        Navigator.pushReplacement(
+                          context,
+                          MaterialPageRoute(builder: (context) => HomepageScreen()),
+                        );
+                      } on FirebaseAuthException catch (e) {
+                        // Display error message to the user
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text(e.message ?? 'An error occurred during login.'),
+                            backgroundColor: Colors.red,
+                          ),
+                        );
+                      } catch (e) {
+                        // Handle other potential errors
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text('An unexpected error occurred.'),
+                            backgroundColor: Colors.red,
+                          ),
+                        );
+                      }
                     }
                   },
                   style: ElevatedButton.styleFrom(

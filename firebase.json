@@ -1,1 +1,9 @@
-{"flutter":{"platforms":{"android":{"default":{"projectId":"homeautomation-b6d6d","appId":"1:258697759332:android:9c63bb5a2b0772fe3b2d71","fileOutput":"android/app/google-services.json"}},"dart":{"lib/firebase_options.dart":{"projectId":"homeautomation-b6d6d","configurations":{"android":"1:258697759332:android:9c63bb5a2b0772fe3b2d71","ios":"1:258697759332:ios:7620bdfd38bcb3d13b2d71","macos":"1:258697759332:ios:7620bdfd38bcb3d13b2d71","web":"1:258697759332:web:7ab12d4a96191be43b2d71","windows":"1:258697759332:web:3de7c66d6a09a7903b2d71"}}}}}}
+{
+  "firestore": {
+    "rules": "firestore.rules",
+    "indexes": "firestore.indexes.json"
+  },
+  "database": {
+    "rules": "database.rules.json"
+  }
+}
