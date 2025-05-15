@@ -35,7 +35,11 @@ class DeviceInfoScreenState extends State<DeviceInfoScreen> {
   late TextEditingController _nameController;
   late TextEditingController _roomController;
   late TextEditingController _typeController;
+  TextEditingController _kWhRateController = TextEditingController(text: "0.0"); // Initialize immediately
   IconData _selectedIcon = Icons.devices; // State for selected icon
+  
+  // Add state variable for device type dropdown
+  String _deviceType = 'Light'; // Default value
 
 
   @override
@@ -53,6 +57,7 @@ class DeviceInfoScreenState extends State<DeviceInfoScreen> {
     _nameController.dispose();
     _roomController.dispose();
     _typeController.dispose();
+    _kWhRateController.dispose(); // Dispose the new controller
     super.dispose();
   }
 
@@ -83,8 +88,12 @@ class DeviceInfoScreenState extends State<DeviceInfoScreen> {
             // Populate editing fields
             _nameController.text = _currentDeviceName;
             _roomController.text = data['roomName'] ?? "";
-            _typeController.text = data['deviceType'] ?? "";
+            _deviceType = data['deviceType'] ?? "Light"; // Set the device type for dropdown
+            _typeController.text = _deviceType; // Keep controller synced for compatibility
             _selectedIcon = IconData(data['icon'] ?? Icons.devices.codePoint, fontFamily: 'MaterialIcons');
+            
+            
+            _kWhRateController.text = data['kWhRate']?.toString() ?? "0.0";
 
             // Update usage display. You might want to format this.
             // Example: using 'kwh' or 'presentHourlyusage'
@@ -150,12 +159,15 @@ class DeviceInfoScreenState extends State<DeviceInfoScreen> {
       return;
     }
 
+   
+    double kWhRate = double.tryParse(_kWhRateController.text) ?? 0.0;
+    
     final updatedData = {
       'applianceName': _nameController.text,
       'roomName': _roomController.text,
-      'deviceType': _typeController.text,
+      'deviceType': _deviceType, // Use _deviceType instead of _typeController.text
       'icon': _selectedIcon.codePoint,
-      // Add other fields if they are editable
+      'kWhRate': kWhRate, 
     };
 
     try {
@@ -182,6 +194,94 @@ class DeviceInfoScreenState extends State<DeviceInfoScreen> {
     }
   }
 
+  // Method to show the icon picker dialog
+  void _showIconPickerDialog() {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          backgroundColor: const Color(0xFFE9E7E6),
+          title: Text('Select an Icon',
+          style: GoogleFonts.jaldi(
+          fontWeight: FontWeight.bold
+          ),
+          ),
+          content: Container(
+            width: double.maxFinite,
+            child: SingleChildScrollView(
+              child: Wrap(
+                spacing: 10,
+                runSpacing: 10,
+                children: _getCommonIcons().map((IconData icon) {
+                  return InkWell(
+                    onTap: () {
+                      setState(() {
+                        _selectedIcon = icon;
+                      });
+                      Navigator.of(context).pop();
+                    },
+                    child: Container(
+                      padding: EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        
+                        color: _selectedIcon.codePoint == icon.codePoint
+                            ? Colors.grey[300]
+                            : Colors.transparent,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Icon(
+                        icon,
+                        size: 32,
+                        color: Colors.black,
+                      ),
+                    ),
+                  );
+                }).toList(),
+              ),
+            ),
+          ),
+          actions: <Widget>[
+            TextButton(
+              onPressed: () {
+                Navigator.of(context).pop();
+              },
+              child: Text('Cancel',
+              style: GoogleFonts.jaldi(
+               textStyle: TextStyle(fontSize: 18, color: Colors.black87),       
+                
+              ),
+            ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  // List of common icons for devices
+  List<IconData> _getCommonIcons() {
+    return [
+      Icons.lightbulb_outline,
+      Icons.power_outlined,
+      Icons.power_settings_new,
+      Icons.ac_unit_outlined,
+      Icons.tv_outlined,
+      Icons.air_outlined,
+      Icons.device_thermostat,
+      Icons.kitchen,
+      Icons.water_drop_outlined,
+      Icons.microwave_outlined,
+      Icons.coffee_maker_outlined,
+      Icons.speaker_outlined,
+      Icons.computer_outlined,
+      Icons.router_outlined,
+      Icons.videogame_asset_outlined,
+      Icons.camera_outlined,
+      Icons.shower_outlined,
+      Icons.local_laundry_service_outlined,
+      Icons.devices_other_outlined,
+    ];
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -204,10 +304,14 @@ class DeviceInfoScreenState extends State<DeviceInfoScreen> {
                 SizedBox(height: 8),
                 Transform.translate(
                   offset: Offset(65, -58),
-                  child: Text(
-                    _currentDeviceName, // Use state variable
-                    style: GoogleFonts.jaldi(
-                      textStyle: TextStyle(fontSize: 23, fontWeight: FontWeight.bold),
+                  child: Container(
+                    width: MediaQuery.of(context).size.width - 100, // Fix overflow by constraining width
+                    child: Text(
+                      _currentDeviceName, // Use state variable
+                      style: GoogleFonts.jaldi(
+                        textStyle: TextStyle(fontSize: 23, fontWeight: FontWeight.bold),
+                      ),
+                      overflow: TextOverflow.ellipsis, // Handle text overflow
                     ),
                   ),
                 ),
@@ -227,22 +331,27 @@ class DeviceInfoScreenState extends State<DeviceInfoScreen> {
                         Row(
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
-                            Row(
-                              children: [
-                                Icon(
-                                  _getIconForDevice(_currentDeviceName), // icon status design
-                                  size: 30,
-                                  color: _isDeviceOn ? Colors.black : Colors.grey,
-                                ),
-                                SizedBox(width: 12),
-                                Text(
-                                  _currentDeviceName, // Use state variable
-                                  style: TextStyle(
-                                    fontSize: 22,
-                                    fontWeight: FontWeight.bold,
+                            Flexible( // Added Flexible to prevent overflow
+                              child: Row(
+                                children: [
+                                  Icon(
+                                    _getIconForDevice(_currentDeviceName), // icon status design
+                                    size: 30,
+                                    color: _isDeviceOn ? Colors.black : Colors.grey,
                                   ),
-                                ),
-                              ],
+                                  SizedBox(width: 12),
+                                  Flexible( // Added Flexible to prevent overflow
+                                    child: Text(
+                                      _currentDeviceName, // Use state variable
+                                      style: TextStyle(
+                                        fontSize: 22,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                      overflow: TextOverflow.ellipsis, // Handle text overflow
+                                    ),
+                                  ),
+                                ],
+                              ),
                             ),
                             Switch(
                               value: _isDeviceOn,
@@ -308,10 +417,67 @@ class DeviceInfoScreenState extends State<DeviceInfoScreen> {
                     Icons.query_stats,
                   ),
                 ),
+                Transform.translate(
+                  offset: Offset(0, 5),
+                  child: Container(
+                    margin: const EdgeInsets.only(bottom: 10),
+                    padding: EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(12),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.05),
+                          blurRadius: 10,
+                          offset: Offset(0, 4),
+                        ),
+                      ],
+                    ),
+                    child: Row(
+                      children: [
+                        Container(
+                          padding: EdgeInsets.all(10),
+                          decoration: BoxDecoration(
+                            color: Colors.blue.withOpacity(0.1),
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: Icon(Icons.attach_money, color: Colors.blue),
+                        ),
+                        SizedBox(width: 16),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                "kWh Rate",
+                                style: GoogleFonts.inter(
+                                  fontSize: 14,
+                                  color: Colors.grey[600],
+                                ),
+                              ),
+                              SizedBox(height: 4),
+                              TextField(
+                                controller: _kWhRateController,
+                                keyboardType: TextInputType.numberWithOptions(decimal: true),
+                                decoration: InputDecoration(
+                                  isDense: true,
+                                  contentPadding: EdgeInsets.symmetric(vertical: 8, horizontal: 8),
+                                  
+                                  hintText: "Enter KWH rate",
+                                  suffixText: "₱/kWh",
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
                 SizedBox(height: 24),
                 // Editing Section
                 Text(
-                  "Edit Device Details",
+                  "Appliance Details",
                   style: TextStyle(
                     fontSize: 20,
                     fontWeight: FontWeight.bold,
@@ -319,39 +485,103 @@ class DeviceInfoScreenState extends State<DeviceInfoScreen> {
                 ),
                 SizedBox(height: 16),
                 TextField(
+                  
                   controller: _nameController,
-                  decoration: InputDecoration(labelText: 'Device Name'),
+                  decoration: InputDecoration(
+                    filled: true,
+                    fillColor: Colors.white,
+                    labelText: 'Appliance Name',
+                    labelStyle: GoogleFonts.jaldi(
+                      fontSize: 20,
+                      
+                    ),
+                     border: OutlineInputBorder(),
+                  ),
                 ),
+                
                 SizedBox(height: 8),
                 TextField(
                   controller: _roomController,
-                  decoration: InputDecoration(labelText: 'Room Name'),
+                  decoration: InputDecoration(
+                    filled: true,
+                    fillColor: Colors.white,
+                    labelText: 'Room Name',
+                    labelStyle: GoogleFonts.jaldi(
+                      fontSize: 20,
+                      
+                    ),
+                     border: OutlineInputBorder(),
+                  ),
                 ),
                 SizedBox(height: 8),
-                TextField(
-                  controller: _typeController,
-                  decoration: InputDecoration(labelText: 'Device Type'),
+                // Replace TextField with DropdownButtonFormField for device type
+                DropdownButtonFormField<String>(
+                  decoration: InputDecoration(
+                    filled: true,
+                    fillColor: Colors.white,
+                    labelText: 'Device Type',
+                    labelStyle: GoogleFonts.jaldi(
+                      textStyle: TextStyle(fontSize: 20),
+                    ),
+                    border: OutlineInputBorder(),
+                  ),
+                  dropdownColor: Colors.grey[200],
+                  style: GoogleFonts.jaldi(
+                    textStyle: TextStyle(fontSize: 18, color: Colors.black87),
+                  ),
+                  value: _deviceType,
+                  items: ['Light', 'Socket'].map((type) {
+                    return DropdownMenuItem(
+                      value: type,
+                      child: Text(type),
+                    );
+                  }).toList(),
+                  onChanged: (value) {
+                    setState(() {
+                      _deviceType = value!;
+                      _typeController.text = value; // Keep the controller in sync
+                    });
+                  },
                 ),
                 SizedBox(height: 8),
-                // Icon Picker (Simple example, a full picker would be more complex)
-                Row(
+                
+                Transform.translate(
+                    offset: Offset(-0, -0),
+               child:  Row(
                   children: [
-                    Text('Icon:'),
                     SizedBox(width: 16),
                     Icon(_selectedIcon),
                     TextButton(
-                      onPressed: () {
-                        // TODO: Implement a proper icon picker
-                        print("Icon picker not implemented yet.");
-                      },
-                      child: Text('Change Icon'),
+                      
+                      onPressed: _showIconPickerDialog, 
+                      child: Text('Change Icon',
+                      style: GoogleFonts.jaldi(
+                              fontSize: 20,
+                              fontWeight: FontWeight.w500,
+                              color: Colors.black,
+                      ),
+                    ),
                     ),
                   ],
                 ),
-                SizedBox(height: 16),
+                ),
+                SizedBox(height: 5),
                 ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.white,
+                    
+    shape: RoundedRectangleBorder(
+      borderRadius: BorderRadius.circular(0),
+      side: BorderSide(color: Colors.black, width: 1),
+    )
+                  ),
                   onPressed: _updateDeviceDetails,
-                  child: Text('Save Changes'),
+                  child: Text('Save Changes',
+                  style: GoogleFonts.judson(
+                      fontSize: 20,
+                      color: Colors.black,
+                  ),
+                      ),
                 ),
               ],
             ),

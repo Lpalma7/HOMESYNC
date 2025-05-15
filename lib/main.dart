@@ -17,7 +17,7 @@ import 'package:firebase_core/firebase_core.dart';
 import 'firebase_options.dart'; // Import firebase_options.dart
 import 'package:homesync/deviceinfo.dart'; // Import deviceinfo.dart
 import 'package:homesync/editdevice.dart'; // Import editdevice.dart
-//import 'package:homesync/profile_screen.dart';
+import 'package:homesync/profile_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -68,7 +68,7 @@ class MyApp extends StatelessWidget {
             applianceId: args['applianceId'] as String, // Expect applianceId in args
           );
         },
-       // '/profile':(context) => ProfileScreen(),
+       '/profile':(context) => ProfileScreen(),
 
 
       },

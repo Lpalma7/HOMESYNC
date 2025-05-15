@@ -312,7 +312,7 @@ class DevicesScreenState extends State<DevicesScreen> {
                       child: CircleAvatar(
                         backgroundColor: Colors.grey,
                         radius: 25,
-                        child: Icon(Icons.person, color: Colors.black, size: 35),
+                        child: Icon(Icons.home, color: Colors.black, size: 35),
                       ),
                     ),
                     const SizedBox(width: 10),
@@ -361,7 +361,7 @@ class DevicesScreenState extends State<DevicesScreen> {
                   mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                   children: [
                     _buildNavButton('Electricity', _selectedIndex == 0, 0),
-                    _buildNavButton('Devices', _selectedIndex == 1, 1),
+                    _buildNavButton('Appliance', _selectedIndex == 1, 1),
                     _buildNavButton('Rooms', _selectedIndex == 2, 2),
                   ],
                 ),
@@ -536,20 +536,26 @@ class DevicesScreenState extends State<DevicesScreen> {
                   const SizedBox(height: 60),
                   Row(
                     children: [
-                      const Icon(Icons.account_circle, size: 50, color: Colors.white),
+                      const Icon(Icons.home, size: 50, color: Colors.white),
                       const SizedBox(width: 10),
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                           Text(
-                            _dbService.getCurrentUserId() ?? "User", // Display user ID or name
-                            style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold),
-                          ),
-                          Text(
-                            _auth.currentUser?.email ?? "email@example.com", // Display user email
-                            style: GoogleFonts.inter(color: Colors.white70, fontSize: 14),
-                          ),
-                        ],
+                      Expanded( 
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              _dbService.getCurrentUserId() ?? "User", // Display user ID or name
+                              style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold),
+                              overflow: TextOverflow.ellipsis, 
+                              maxLines: 1, 
+                            ),
+                            Text(
+                              _auth.currentUser?.email ?? "email@example.com", // Display user email
+                              style: GoogleFonts.inter(color: Colors.white70, fontSize: 14),
+                              overflow: TextOverflow.ellipsis, 
+                              maxLines: 1, 
+                            ),
+                          ],
+                        ),
                       ),
                     ],
                   ),
@@ -558,7 +564,7 @@ class DevicesScreenState extends State<DevicesScreen> {
                     leading: const Icon(Icons.person, color: Colors.white, size: 35),
                     title: Text('Profile', style: GoogleFonts.inter(color: Colors.white)),
                     onTap: () {
-                       Navigator.pop(context); // Close flyout
+                    
                        Navigator.pushNamed(context, '/profile'); // Navigate to profile
                     }
                   ),
@@ -567,7 +573,7 @@ class DevicesScreenState extends State<DevicesScreen> {
                     leading: const Icon(Icons.notifications, color: Colors.white, size: 35),
                     title: Text('Notification', style: GoogleFonts.inter(color: Colors.white)),
                     onTap: () {
-                      Navigator.pop(context); // Close flyout
+                      
                       Navigator.push(
                         context,
                         MaterialPageRoute(builder: (context) => NotificationScreen()),
@@ -631,12 +637,15 @@ class DevicesScreenState extends State<DevicesScreen> {
           ),
         ),
         if (isSelected)
-          Container(
-            height: 2.5, // Slightly thicker underline
-            width: 60, // Width of underline
+        Transform.translate(
+            offset: const Offset(0, -10),
+          child:Container(
+            height: 2, // Slightly thicker underline
+            width: 70, // Width of underline
             color: Colors.brown[600], // Darker brown
-            margin: const EdgeInsets.only(top: 0), // Closer to text
+            margin: const EdgeInsets.only(top: 1), // Closer to text
           ),
+        ),
       ],
     );
   }

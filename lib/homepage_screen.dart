@@ -5,7 +5,7 @@ import 'package:weather/weather.dart';
 import 'package:homesync/electricity_usage_chart.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:homesync/notification_screen.dart';
-//import 'package:homesync/profile_screen.dart';
+import 'package:homesync/profile_screen.dart';
 
 class HomepageScreen extends StatefulWidget {
   const HomepageScreen({super.key});
@@ -44,7 +44,7 @@ class _HomeScreenState extends State<HomepageScreen> {
                     child:CircleAvatar(
                       backgroundColor: Colors.grey,
                       radius: 25,
-                      child: Icon(Icons.person, color: Colors.black, size: 35),
+                      child: Icon(Icons.home, color: Colors.black, size: 35),
                     ),
                      ),
                     SizedBox(width: 10,),
@@ -102,7 +102,7 @@ class _HomeScreenState extends State<HomepageScreen> {
     mainAxisAlignment: MainAxisAlignment.spaceEvenly,
     children: [
       _buildNavButton('Electricity', _selectedIndex == 0, 0),
-      _buildNavButton('Devices', _selectedIndex == 1, 1),
+      _buildNavButton('Appliance', _selectedIndex == 1, 1),
       _buildNavButton('Rooms', _selectedIndex == 2, 2),
           ],
           
@@ -232,27 +232,33 @@ void _showFlyout(BuildContext context) { //flyout na nakaka baliw ayusin
 
                 Row( //profile icon, name, and email display
                   children: [
-                    Icon(Icons.account_circle, size: 50, color: Colors.white), 
+                    Icon(Icons.home, size: 50, color: Colors.white), 
                     SizedBox(width: 10),
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          "My Home",
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontSize: 20,
-                            fontWeight: FontWeight.bold,
+                    Expanded( 
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            "My Home",
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 20,
+                              fontWeight: FontWeight.bold,
+                            ),
+                            overflow: TextOverflow.ellipsis, 
+                            maxLines: 1, 
                           ),
-                        ),
-                        Text(
-                          "emailExample@gmail.com", 
-                          style: GoogleFonts.inter(
-                            color: Colors.white70,
-                            fontSize: 14,
+                          Text(
+                            "emailExample@gmail.com", 
+                            style: GoogleFonts.inter(
+                              color: Colors.white70,
+                              fontSize: 14,
+                            ),
+                            overflow: TextOverflow.ellipsis, 
+                            maxLines: 1, 
                           ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
                   ],
                 ),
@@ -266,7 +272,7 @@ void _showFlyout(BuildContext context) { //flyout na nakaka baliw ayusin
                 onTap: () {
               Navigator.push(
                 context,
-                MaterialPageRoute(builder: (context) => NotificationScreen()),
+                MaterialPageRoute(builder: (context) => ProfileScreen()),
               );
             },
               ),  
@@ -378,7 +384,7 @@ Widget _buildNavButton(String title, bool isSelected, int index) { // nav bar fu
       children: [
         Padding(
           padding: EdgeInsets.symmetric(vertical: 16),
-          child: Text('Devices',
+          child: Text('Appliance',
               style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
         ),
         // TODO: Replace placeholder IDs with actual appliance IDs from Firestore

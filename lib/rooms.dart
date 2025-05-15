@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:homesync/notification_screen.dart';
+import 'package:homesync/profile_screen.dart';
 import 'package:weather/weather.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:homesync/welcome_screen.dart';
@@ -47,7 +48,7 @@ class RoomsState extends State<Rooms> {
                       child: CircleAvatar(
                         backgroundColor: Colors.grey,
                         radius: 25,
-                        child: Icon(Icons.person, color: Colors.black, size: 35),
+                        child: Icon(Icons.home, color: Colors.black, size: 35),
                       ),
                     ),
                     const SizedBox(width: 10),
@@ -98,7 +99,7 @@ class RoomsState extends State<Rooms> {
                   mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                   children: [
                     _buildNavButton('Electricity', _selectedIndex == 0, 0),
-                    _buildNavButton('Devices', _selectedIndex == 1, 1),
+                    _buildNavButton('Appliance', _selectedIndex == 1, 1),
                     _buildNavButton('Rooms', _selectedIndex == 2, 2),
                   ],
                 ),
@@ -487,20 +488,26 @@ class RoomsState extends State<Rooms> {
                   const SizedBox(height: 60),
                   Row(
                     children: [
-                      const Icon(Icons.account_circle, size: 50, color: Colors.white),
+                      const Icon(Icons.home, size: 50, color: Colors.white),
                       const SizedBox(width: 10),
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text(
-                            "My Home",
-                            style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold),
-                          ),
-                          Text(
-                            "emailExample@gmail.com",
-                            style: GoogleFonts.inter(color: Colors.white70, fontSize: 14),
-                          ),
-                        ],
+                      Expanded( 
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              "My Home",
+                              style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold),
+                              overflow: TextOverflow.ellipsis, 
+                              maxLines: 1, 
+                            ),
+                            Text(
+                              "emailExample@gmail.com",
+                              style: GoogleFonts.inter(color: Colors.white70, fontSize: 14),
+                              overflow: TextOverflow.ellipsis, 
+                              maxLines: 1, 
+                            ),
+                          ],
+                        ),
                       ),
                     ],
                   ),
@@ -508,8 +515,14 @@ class RoomsState extends State<Rooms> {
                   ListTile(
                     leading: const Icon(Icons.person, color: Colors.white, size: 35),
                     title: Text('Profile', style: GoogleFonts.inter(color: Colors.white)),
-                    onTap: () => Navigator.pop(context),
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (context) => ProfileScreen()),
+                      );
+                    },
                   ),
+                      
                   const SizedBox(height: 15),
                   ListTile(
                     leading: const Icon(Icons.notifications, color: Colors.white, size: 35),

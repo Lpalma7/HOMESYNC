@@ -81,6 +81,10 @@ class _AddDeviceScreenState extends State<AddDeviceScreen> {
     super.initState();
     _fetchRoomsFromFirestore();
     
+    // Initialize error states to null to prevent showing errors initially
+    timeError = null;
+    daysError = null;
+    
     if (widget.deviceData != null) {
       isEditing = true;
       // Populate fields with existing device data
@@ -143,9 +147,9 @@ class _AddDeviceScreenState extends State<AddDeviceScreen> {
                   ),
 
                   Transform.translate(
-                    offset: Offset(-50, -30),
+                    offset: Offset(-40, -30),
                     child: Text(
-                      isEditing ? ' Edit device' : ' Add device', // Change title based on mode
+                      isEditing ? ' Edit appliance' : ' Add appliance', // Change title based on mode
                       textAlign: TextAlign.center,
                       style: GoogleFonts.jaldi(
                         textStyle: TextStyle(fontSize: 23, fontWeight: FontWeight.bold),
@@ -182,7 +186,7 @@ class _AddDeviceScreenState extends State<AddDeviceScreen> {
                   ),
                   _buildRequiredTextField(
                     kwhController, 
-                    "KWPH", 
+                    "kWh", 
                     Icons.energy_savings_leaf, 
                     keyboardType: TextInputType.number,
                     errorText: kwhError
@@ -285,43 +289,41 @@ class _AddDeviceScreenState extends State<AddDeviceScreen> {
                     },
                   ),
                   
-                  // Required socket input 
-                  if (deviceType == 'Socket') ...[
-                    SizedBox(height: 5),
-                    DropdownButtonFormField<String>(
-                      decoration: InputDecoration(
-                        filled: true,
-                        fillColor: Colors.white,
-                        prefixIcon: Icon(Icons.electrical_services, size: 30, color: Colors.black),
-                        labelText: "Relay",
-                        errorText: socketError,
-                        border: OutlineInputBorder(),
-                      ),
-                      value: selectedRelay,
-                      items: relays.map((relay) {
-                        return DropdownMenuItem(
-                          value: relay,
-                          child: Text(relay),
-                        );
-                      }).toList(),
-                      onChanged: (value) {
-                        setState(() {
-                          selectedRelay = value;
-                          socketError = null;
-                        });
-                      },
-                      validator: (value) {
-                        if (deviceType == 'Socket' && (value == null || value.isEmpty)) {
-                          return "Relay is required";
-                        }
-                        return null;
-                      },
+                  
+                  SizedBox(height: 15),
+                  DropdownButtonFormField<String>(
+                    decoration: InputDecoration(
+                      filled: true,
+                      fillColor: Colors.white,
+                      prefixIcon: Icon(Icons.electrical_services, size: 30, color: Colors.black),
+                      labelText: "Relay",
+                      errorText: socketError,
+                      border: OutlineInputBorder(),
                     ),
-                  ],
+                    value: selectedRelay,
+                    items: relays.map((relay) {
+                      return DropdownMenuItem(
+                        value: relay,
+                        child: Text(relay),
+                      );
+                    }).toList(),
+                    onChanged: (value) {
+                      setState(() {
+                        selectedRelay = value;
+                        socketError = null;
+                      });
+                    },
+                    validator: (value) {
+                      if (value == null || value.isEmpty) {
+                        return "Relay is required";
+                      }
+                      return null;
+                    },
+                  ),
 
                   SizedBox(height: 10),
                   
-                  // Required time
+                  // Time selection 
                   Container(
                     decoration: BoxDecoration(
                       color: Colors.white, 
@@ -341,7 +343,7 @@ class _AddDeviceScreenState extends State<AddDeviceScreen> {
                                 title: Text(
                                   startTime != null
                                       ? 'Start: \n${startTime!.format(context)}'
-                                      : 'Set Start Time *',
+                                      : 'Set Start Time',
                                 ),
                                 onTap: () => _pickStartTime(),
                               ),
@@ -353,7 +355,7 @@ class _AddDeviceScreenState extends State<AddDeviceScreen> {
                                 title: Text(
                                   endTime != null
                                       ? 'End: \n${endTime!.format(context)}'
-                                      : 'Set End Time *',
+                                      : 'Set End Time',
                                 ),
                                 onTap: () => _pickEndTime(),
                               ),
@@ -410,7 +412,7 @@ class _AddDeviceScreenState extends State<AddDeviceScreen> {
                     ),
                   ),
                   
-                  // Require repeating days 
+                  // Repeating days
                   Padding(
                     padding: const EdgeInsets.symmetric(vertical: 8.0),
                     child: Column(
@@ -759,7 +761,6 @@ class _AddDeviceScreenState extends State<AddDeviceScreen> {
     }
   }
   
-  
   void _validateAndSubmitDevice() {
     // Checking req field
     bool isValid = true;
@@ -797,7 +798,7 @@ class _AddDeviceScreenState extends State<AddDeviceScreen> {
       });
     }
 
-    if (deviceType == 'Socket' && (selectedRelay == null || selectedRelay!.isEmpty)) { // Check selectedRelay
+    if (selectedRelay == null || selectedRelay!.isEmpty) {
       setState(() {
         socketError = "Relay is required"; // Update error message
       });
@@ -808,27 +809,15 @@ class _AddDeviceScreenState extends State<AddDeviceScreen> {
       });
     }
 
-    if (startTime == null || endTime == null) {
-      setState(() {
-        timeError = "Start and end times are required";
-      });
-      isValid = false;
-    } else {
-      setState(() {
-        timeError = null;
-      });
-    }
+    
+    setState(() {
+      timeError = null;
+    });
 
-    if (!selectedDays.values.any((selected) => selected)) {
-      setState(() {
-        daysError = "At least one day must be selected";
-      });
-      isValid = false;
-    } else {
-      setState(() {
-        daysError = null;
-      });
-    }
+    
+    setState(() {
+      daysError = null;
+    });
 
     if (isValid) {
       if (isEditing) {
@@ -855,12 +844,12 @@ class _AddDeviceScreenState extends State<AddDeviceScreen> {
           .where((entry) => entry.value)
           .map((entry) => entry.key)
           .toList(),
-      "relay": deviceType == 'Socket' ? selectedRelay : null,
+      "relay": selectedRelay, // Always include relay for all device types
       "applianceStatus": 'OFF', // Default status for new device as STRING
       "presentHourlyusage": 0.0, // Default value, adjust if needed
     };
 
-    print("Attempting to add device: $deviceData");
+    print("Attempting to add appliance: $deviceData");
 
     try {
       await dbService.addAppliance(applianceData: deviceData);
@@ -908,7 +897,7 @@ class _AddDeviceScreenState extends State<AddDeviceScreen> {
           .where((entry) => entry.value)
           .map((entry) => entry.key)
           .toList(),
-      "relay": deviceType == 'Socket' ? selectedRelay : null,
+      "relay": selectedRelay, // Always include relay for all device types
       // "presentHourlyusage": widget.deviceData!['presentHourlyusage'], // Preserve if not editable here
       // "applianceStatus": widget.deviceData!['applianceStatus'], // Preserve if not editable here
     };

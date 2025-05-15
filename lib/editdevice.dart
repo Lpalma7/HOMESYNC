@@ -1,11 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:homesync/databaseservice.dart';
-// Import RoomDataManager
-import 'package:cloud_firestore/cloud_firestore.dart'; // Import Firestore
+import 'package:cloud_firestore/cloud_firestore.dart';
 
 class EditDeviceScreen extends StatefulWidget {
-  final String applianceId; // Required appliance ID for editing
+  final String applianceId;
   const EditDeviceScreen({super.key, required this.applianceId});
 
   @override
@@ -16,23 +15,21 @@ class _EditDeviceScreenState extends State<EditDeviceScreen> {
   // Add a list of available relays
   List<String> relays = List.generate(9, (index) => 'relay${index + 1}');
 
-  bool isEditing = false; // Flag to indicate if in edit mode
+  bool isEditing = false;
+  bool _isLoading = true;
 
   final TextEditingController applianceNameController = TextEditingController();
   final TextEditingController kwhController = TextEditingController();
-  final TextEditingController roomController = TextEditingController();
-  final TextEditingController socketController = TextEditingController();
+  final TextEditingController roomController = TextEditingController(); // Use this instead of dropdown
+  final TextEditingController relayController = TextEditingController(); // For relay name
 
-  // Inside the _AddDeviceScreenState class
   String? selectedRelay;
-  
   final _formKey = GlobalKey<FormState>();
 
   String deviceType = 'Light';
   String? selectedRoom;
   List<String> rooms = [];
   Map<String, IconData> roomIcons = {};
-  bool _isLoadingRooms = true;
 
   TimeOfDay? startTime;
   TimeOfDay? endTime;
@@ -78,8 +75,11 @@ class _EditDeviceScreenState extends State<EditDeviceScreen> {
   @override
   void initState() {
     super.initState();
-    _fetchRoomsFromFirestore();
-    _fetchDeviceData(); // Fetch device data for editing
+    // Initialize error states
+    timeError = null;
+    daysError = null;
+    
+    _fetchDeviceData();
   }
 
   void _fetchDeviceData() async {
@@ -90,21 +90,41 @@ class _EditDeviceScreenState extends State<EditDeviceScreen> {
           isEditing = true;
           applianceNameController.text = deviceData['applianceName'] as String;
           kwhController.text = (deviceData['kwh'] ?? 0.0).toString();
+          
+          // Store room in controller and selectedRoom
           selectedRoom = deviceData['roomName'] as String?;
+          if (selectedRoom != null) {
+            roomController.text = selectedRoom!;
+          }
+          
           deviceType = deviceData['deviceType'] as String? ?? 'Light';
+          
+          // Set relay
           selectedRelay = deviceData['relay'] as String?;
+          if (selectedRelay != null) {
+            relayController.text = selectedRelay!;
+          }
+          
           selectedIcon = IconData(deviceData['icon'] as int? ?? Icons.device_hub.codePoint, fontFamily: 'MaterialIcons');
 
           // Parse start and end times
           final startTimeString = deviceData['startTime'] as String?;
           final endTimeString = deviceData['endTime'] as String?;
           if (startTimeString != null) {
-            final startTimeParts = startTimeString.split(':');
-            startTime = TimeOfDay(hour: int.parse(startTimeParts[0]), minute: int.parse(startTimeParts[1]));
+            try {
+              final startTimeParts = startTimeString.split(':');
+              startTime = TimeOfDay(hour: int.parse(startTimeParts[0]), minute: int.parse(startTimeParts[1]));
+            } catch (e) {
+              print("Error parsing start time: $e");
+            }
           }
           if (endTimeString != null) {
-            final endTimeParts = endTimeString.split(':');
-            endTime = TimeOfDay(hour: int.parse(endTimeParts[0]), minute: int.parse(endTimeParts[1]));
+            try {
+              final endTimeParts = endTimeString.split(':');
+              endTime = TimeOfDay(hour: int.parse(endTimeParts[0]), minute: int.parse(endTimeParts[1]));
+            } catch (e) {
+              print("Error parsing end time: $e");
+            }
           }
 
           // Populate selected days
@@ -112,11 +132,12 @@ class _EditDeviceScreenState extends State<EditDeviceScreen> {
           for (var day in selectedDays.keys) {
             selectedDays[day] = daysList.contains(day);
           }
+          
+          _isLoading = false;
         });
       } else {
         // Handle case where device data is not found
         print("Device with ID ${widget.applianceId} not found.");
-        // Optionally show an error message and pop the screen
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(content: Text("Device not found."))
@@ -126,7 +147,6 @@ class _EditDeviceScreenState extends State<EditDeviceScreen> {
       }
     } catch (e) {
       print("Error fetching device data: $e");
-      // Handle error fetching data
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text("Error loading device data: ${e.toString()}"))
@@ -138,8 +158,16 @@ class _EditDeviceScreenState extends State<EditDeviceScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // Show loading indicator while data is loading
+    if (_isLoading) {
+      return Scaffold(
+        backgroundColor: const Color(0xFFE9E7E6),
+        body: Center(child: CircularProgressIndicator()),
+      );
+    }
+    
     return Scaffold(
-      backgroundColor: const Color(0xFFE9E7E6), //frame
+      backgroundColor: const Color(0xFFE9E7E6),
       appBar: null,
       body: SafeArea(
         child: Form(
@@ -163,7 +191,7 @@ class _EditDeviceScreenState extends State<EditDeviceScreen> {
                   Transform.translate(
                     offset: Offset(-50, -30),
                     child: Text(
-                      isEditing ? ' Edit device' : ' Add device', // Change title based on mode
+                      isEditing ? ' Edit device' : ' Add device',
                       textAlign: TextAlign.center,
                       style: GoogleFonts.jaldi(
                         textStyle: TextStyle(fontSize: 23, fontWeight: FontWeight.bold),
@@ -173,7 +201,7 @@ class _EditDeviceScreenState extends State<EditDeviceScreen> {
                   ),
       
                   SizedBox(height: 5),
-                  Transform.translate(  // icon profile
+                  Transform.translate(
                     offset: Offset(0,-15),
                     child: Container(
                       width: 100,
@@ -191,7 +219,7 @@ class _EditDeviceScreenState extends State<EditDeviceScreen> {
                     ),
                   ),
                   
-                  // Required text 
+                  // Required text fields
                   _buildRequiredTextField(
                     applianceNameController, 
                     "Appliance Name", 
@@ -200,7 +228,7 @@ class _EditDeviceScreenState extends State<EditDeviceScreen> {
                   ),
                   _buildRequiredTextField(
                     kwhController, 
-                    "KWPH", 
+                    "kWh", 
                     Icons.energy_savings_leaf, 
                     keyboardType: TextInputType.number,
                     errorText: kwhError
@@ -208,53 +236,34 @@ class _EditDeviceScreenState extends State<EditDeviceScreen> {
 
                   SizedBox(height: 10),
                   
-                  // Required room
-                  _isLoadingRooms
-                    ? Center(child: CircularProgressIndicator())
-                    : DropdownButtonFormField<String>(
-                        decoration: InputDecoration(
-                          filled: true,
-                          fillColor: Colors.white,
-                          prefixIcon: Icon(
-                            selectedRoom != null ? (roomIcons[selectedRoom] ?? Icons.home) : Icons.home,
-                            size: 30,
-                            color: Colors.black
-                          ),
-                          labelText: 'Room',
-                          labelStyle: GoogleFonts.jaldi(
-                            textStyle: TextStyle(fontSize: 20),
-                            color: Colors.black,
-                          ),
-                          border: OutlineInputBorder(),
-                          errorText: roomError,
-                        ),
-                        dropdownColor: Colors.grey[200],
-                        style: GoogleFonts.jaldi(
-                          textStyle: TextStyle(fontSize: 18, color: Colors.black87),
-                        ),
-                        value: selectedRoom,
-                        items: rooms.isEmpty
-                          ? [DropdownMenuItem(value: 'No Rooms', child: Text('No Rooms Available'))]
-                          : rooms.map((room) {
-                              return DropdownMenuItem(
-                                value: room,
-                                child: Text(room),
-                              );
-                            }).toList(),
-                        onChanged: (value) {
-                          if (value == 'No Rooms') return;
-                          setState(() {
-                            selectedRoom = value;
-                            roomError = null;
-                          });
-                        },
-                        validator: (value) {
-                          if (value == null || value.isEmpty || value == 'No Rooms') {
-                            return "Room is required";
-                          }
-                          return null;
-                        },
+                  // Room input as TextFormField instead of dropdown
+                  TextFormField(
+                    controller: roomController,
+                    decoration: InputDecoration(
+                      filled: true,
+                      fillColor: Colors.white,
+                      prefixIcon: Icon(Icons.home, size: 30, color: Colors.black),
+                      labelText: 'Room',
+                      labelStyle: GoogleFonts.jaldi(
+                        textStyle: TextStyle(fontSize: 20),
+                        color: Colors.grey,
                       ),
+                      border: OutlineInputBorder(),
+                      errorText: roomError,
+                    ),
+                    onChanged: (value) {
+                      setState(() {
+                        selectedRoom = value;
+                        roomError = null;
+                      });
+                    },
+                    validator: (value) {
+                      if (value == null || value.isEmpty) {
+                        return "Room is required";
+                      }
+                      return null;
+                    },
+                  ),
                   
                   SizedBox(height: 15),
                   
@@ -285,51 +294,45 @@ class _EditDeviceScreenState extends State<EditDeviceScreen> {
                     onChanged: (value) {
                       setState(() {
                         deviceType = value!;
-                        
-                        if (deviceType == 'Light') {
-                          socketError = null;
-                        }
                       });
                     },
                   ),
                   
-                  // Required socket input 
-                  if (deviceType == 'Socket') ...[
-                    SizedBox(height: 5),
-                    DropdownButtonFormField<String>(
-                      decoration: InputDecoration(
-                        filled: true,
-                        fillColor: Colors.white,
-                        prefixIcon: Icon(Icons.electrical_services, size: 30, color: Colors.black),
-                        labelText: "Relay",
-                        errorText: socketError,
-                        border: OutlineInputBorder(),
-                      ),
-                      value: selectedRelay,
-                      items: relays.map((relay) {
-                        return DropdownMenuItem(
-                          value: relay,
-                          child: Text(relay),
-                        );
-                      }).toList(),
-                      onChanged: (value) {
-                        setState(() {
-                          selectedRelay = value;
-                          socketError = null;
-                        });
-                      },
-                      validator: (value) {
-                        if (deviceType == 'Socket' && (value == null || value.isEmpty)) {
-                          return "Relay is required";
-                        }
-                        return null;
-                      },
+                  
+                  SizedBox(height: 15),
+                  DropdownButtonFormField<String>(
+                    decoration: InputDecoration(
+                      filled: true,
+                      fillColor: Colors.white,
+                      prefixIcon: Icon(Icons.electrical_services, size: 30, color: Colors.black),
+                      labelText: "Relay",
+                      errorText: socketError,
+                      border: OutlineInputBorder(),
                     ),
-                  ],
+                    value: selectedRelay,
+                    items: relays.map((relay) {
+                      return DropdownMenuItem(
+                        value: relay,
+                        child: Text(relay),
+                      );
+                    }).toList(),
+                    onChanged: (value) {
+                      setState(() {
+                        selectedRelay = value;
+                        socketError = null;
+                      });
+                    },
+                    validator: (value) {
+                      if (value == null || value.isEmpty) {
+                        return "Relay is required";
+                      }
+                      return null;
+                    },
+                  ),
 
                   SizedBox(height: 10),
                   
-                  // Required time
+                
                   Container(
                     decoration: BoxDecoration(
                       color: Colors.white, 
@@ -349,7 +352,7 @@ class _EditDeviceScreenState extends State<EditDeviceScreen> {
                                 title: Text(
                                   startTime != null
                                       ? 'Start: \n${startTime!.format(context)}'
-                                      : 'Set Start Time *',
+                                      : 'Set Start Time',
                                 ),
                                 onTap: () => _pickStartTime(),
                               ),
@@ -361,7 +364,7 @@ class _EditDeviceScreenState extends State<EditDeviceScreen> {
                                 title: Text(
                                   endTime != null
                                       ? 'End: \n${endTime!.format(context)}'
-                                      : 'Set End Time *',
+                                      : 'Set End Time',
                                 ),
                                 onTap: () => _pickEndTime(),
                               ),
@@ -382,7 +385,7 @@ class _EditDeviceScreenState extends State<EditDeviceScreen> {
                       ],
                     ),
                   ),
-// title
+
                   Transform.translate( 
                     offset: Offset(-90, 13),
                     child: Text(
@@ -418,7 +421,7 @@ class _EditDeviceScreenState extends State<EditDeviceScreen> {
                     ),
                   ),
                   
-                  // Require repeating days 
+                  
                   Padding(
                     padding: const EdgeInsets.symmetric(vertical: 8.0),
                     child: Column(
@@ -436,7 +439,6 @@ class _EditDeviceScreenState extends State<EditDeviceScreen> {
                             if (daysError != null)
                               Padding(
                                 padding: const EdgeInsets.only(left: 8.0),
-                                
                               ),
                           ],
                         ),
@@ -456,7 +458,6 @@ class _EditDeviceScreenState extends State<EditDeviceScreen> {
                                   onSelected: (selected) {
                                     setState(() {
                                       selectedDays[day] = selected;
-                                      
                                       if (selected) {
                                         daysError = null;
                                       }
@@ -500,13 +501,13 @@ class _EditDeviceScreenState extends State<EditDeviceScreen> {
                             child: Text(
                               'Delete Device',
                               style: GoogleFonts.judson(
-                                fontSize: 20,
+                                fontSize: 19,
                                 color: Colors.white,
                               ),
                             ),
                           ),
                         ),
-                      SizedBox(width: isEditing ? 10 : 0), // Add spacing if delete button is present
+                      SizedBox(width: isEditing ? 10 : 0),
                       Expanded(
                         child: ElevatedButton(
                           onPressed: _validateAndSubmitDevice,
@@ -522,9 +523,9 @@ class _EditDeviceScreenState extends State<EditDeviceScreen> {
                             shadowColor: Colors.black.withOpacity(0.5),
                           ),
                           child: Text(
-                            isEditing ? 'Save Changes' : 'Add Device', // Change button text
+                            isEditing ? 'Save Changes' : 'Add Device',
                             style: GoogleFonts.judson(
-                              fontSize: isEditing ? 20 : 24, // Adjust font size if needed
+                              fontSize: isEditing ? 19 : 19,
                               color: Colors.black,
                             ),
                           ),
@@ -610,7 +611,6 @@ class _EditDeviceScreenState extends State<EditDeviceScreen> {
       setState(() {
         startTime = presetTimes[preset]!['start'];
         endTime = presetTimes[preset]!['end'];
-      
         timeError = null;
       });
     }
@@ -624,10 +624,7 @@ class _EditDeviceScreenState extends State<EditDeviceScreen> {
     if (picked != null) {
       setState(() {
         startTime = picked;
-   
-        if (endTime != null) {
-          timeError = null;
-        }
+        timeError = null;
       });
     }
   }
@@ -640,10 +637,7 @@ class _EditDeviceScreenState extends State<EditDeviceScreen> {
     if (picked != null) {
       setState(() {
         endTime = picked;
-       
-        if (startTime != null) {
-          timeError = null;
-        }
+        timeError = null;
       });
     }
   }
@@ -666,7 +660,7 @@ class _EditDeviceScreenState extends State<EditDeviceScreen> {
 
     if (kwhController.text.isEmpty) {
       setState(() {
-        kwhError = "KWPH is required";
+        kwhError = "kWh is required";
       });
       isValid = false;
     } else {
@@ -675,7 +669,7 @@ class _EditDeviceScreenState extends State<EditDeviceScreen> {
       });
     }
 
-    if (selectedRoom == null) {
+    if (roomController.text.isEmpty) {
       setState(() {
         roomError = "Room is required";
       });
@@ -683,12 +677,14 @@ class _EditDeviceScreenState extends State<EditDeviceScreen> {
     } else {
       setState(() {
         roomError = null;
+        // Make sure selectedRoom is set from controller
+        selectedRoom = roomController.text;
       });
     }
 
-    if (deviceType == 'Socket' && (selectedRelay == null || selectedRelay!.isEmpty)) { // Check selectedRelay
+    if (selectedRelay == null || selectedRelay!.isEmpty) {
       setState(() {
-        socketError = "Relay is required"; // Update error message
+        socketError = "Relay is required";
       });
       isValid = false;
     } else {
@@ -697,27 +693,11 @@ class _EditDeviceScreenState extends State<EditDeviceScreen> {
       });
     }
 
-    if (startTime == null || endTime == null) {
-      setState(() {
-        timeError = "Start and end times are required";
-      });
-      isValid = false;
-    } else {
-      setState(() {
-        timeError = null;
-      });
-    }
-
-    if (!selectedDays.values.any((selected) => selected)) {
-      setState(() {
-        daysError = "At least one day must be selected";
-      });
-      isValid = false;
-    } else {
-      setState(() {
-        daysError = null;
-      });
-    }
+    // Time and days are optional
+    setState(() {
+      timeError = null;
+      daysError = null;
+    });
 
     if (isValid) {
       if (isEditing) {
@@ -725,18 +705,20 @@ class _EditDeviceScreenState extends State<EditDeviceScreen> {
       } else {
         _submitDevice();
       }
-      Navigator.of(context).pop();
     }
   }
 
-  void _submitDevice() async { // Made async
+  void _submitDevice() async {
     final DatabaseService dbService = DatabaseService();
-    // all data
+    
+    // Get room name from controller to be safe
+    final roomName = roomController.text.trim();
+    
     final Map<String, dynamic> deviceData = {
-      "applianceName": applianceNameController.text,
+      "applianceName": applianceNameController.text.trim(),
       "deviceType": deviceType,
       "kwh": double.tryParse(kwhController.text) ?? 0.0,
-      "roomName": selectedRoom!, // selectedRoom is validated to not be null
+      "roomName": roomName,
       "icon": selectedIcon.codePoint,
       "startTime": startTime != null ? "${startTime!.hour.toString().padLeft(2, '0')}:${startTime!.minute.toString().padLeft(2, '0')}" : null,
       "endTime": endTime != null ? "${endTime!.hour.toString().padLeft(2, '0')}:${endTime!.minute.toString().padLeft(2, '0')}" : null,
@@ -744,24 +726,22 @@ class _EditDeviceScreenState extends State<EditDeviceScreen> {
           .where((entry) => entry.value)
           .map((entry) => entry.key)
           .toList(),
-      "relay": deviceType == 'Socket' ? selectedRelay : null,
-      "applianceStatus": 'OFF', // Default status for new device as STRING
-      "presentHourlyusage": 0.0, // Default value, adjust if needed
+      "relay": selectedRelay, 
+      "applianceStatus": 'OFF',
+      "presentHourlyusage": 0.0,
     };
-
-    print("Attempting to add device: $deviceData");
 
     try {
       await dbService.addAppliance(applianceData: deviceData);
-      print("Device successfully added to Firestore via DatabaseService.");
+      print("Device successfully added to Firestore.");
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text("${deviceData['applianceName']} added successfully!"))
         );
-        Navigator.of(context).pop(); // Pop after successful submission
+        Navigator.of(context).pop();
       }
     } catch (e) {
-      print("Error adding device via DatabaseService: $e");
+      print("Error adding device: $e");
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text("Error adding device: ${e.toString()}"))
@@ -770,17 +750,18 @@ class _EditDeviceScreenState extends State<EditDeviceScreen> {
     }
   }
 
-  void _updateDevice() async { // Made async
+  void _updateDevice() async {
     final DatabaseService dbService = DatabaseService();
     final String applianceId = widget.applianceId;
 
-    // Data to update. Only include fields that are editable on this screen.
-    // applianceStatus is typically handled by toggle switches, not directly set here unless intended.
+    // Get room name from controller to be safe
+    final roomName = roomController.text.trim();
+    
     final Map<String, dynamic> updatedData = {
-      "applianceName": applianceNameController.text,
+      "applianceName": applianceNameController.text.trim(),
       "deviceType": deviceType,
       "kwh": double.tryParse(kwhController.text) ?? 0.0,
-      "roomName": selectedRoom!,
+      "roomName": roomName,
       "icon": selectedIcon.codePoint,
       "startTime": startTime != null ? "${startTime!.hour.toString().padLeft(2, '0')}:${startTime!.minute.toString().padLeft(2, '0')}" : null,
       "endTime": endTime != null ? "${endTime!.hour.toString().padLeft(2, '0')}:${endTime!.minute.toString().padLeft(2, '0')}" : null,
@@ -788,25 +769,20 @@ class _EditDeviceScreenState extends State<EditDeviceScreen> {
           .where((entry) => entry.value)
           .map((entry) => entry.key)
           .toList(),
-      "relay": deviceType == 'Socket' ? selectedRelay : null,
-      // "presentHourlyusage": widget.deviceData!['presentHourlyusage'], // Preserve if not editable here
-      // "applianceStatus": widget.deviceData!['applianceStatus'], // Preserve if not editable here
+      "relay": selectedRelay,
     };
-
-
-    print("Attempting to update device $applianceId with data: $updatedData");
 
     try {
       await dbService.updateApplianceData(applianceId: applianceId, dataToUpdate: updatedData);
-      print("Device $applianceId successfully updated via DatabaseService.");
+      print("Device $applianceId successfully updated.");
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text("${updatedData['applianceName']} updated successfully!"))
         );
-        Navigator.of(context).pop(); // Pop after successful submission
+        Navigator.of(context).pop();
       }
     } catch (e) {
-      print("Error updating device $applianceId via DatabaseService: $e");
+      print("Error updating device: $e");
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text("Error updating device: ${e.toString()}"))
@@ -815,14 +791,13 @@ class _EditDeviceScreenState extends State<EditDeviceScreen> {
     }
   }
 
-  void _deleteDevice() async { // Made async
+  void _deleteDevice() async {
     final DatabaseService dbService = DatabaseService();
     final String applianceId = widget.applianceId;
-    // We need to fetch the device data to get the name for the confirmation dialog
-    final deviceData = await DatabaseService().getApplianceData(applianceId);
-    final String applianceNameToDelete = deviceData?['applianceName'] as String? ?? "Device";
+    
+    // Use the current controller value for the name
+    final String applianceNameToDelete = applianceNameController.text.trim();
 
-    // Show a confirmation dialog before deleting
     bool? confirmDelete = await showDialog<bool>(
       context: context,
       builder: (BuildContext context) {
@@ -833,13 +808,13 @@ class _EditDeviceScreenState extends State<EditDeviceScreen> {
             TextButton(
               child: Text('Cancel'),
               onPressed: () {
-                Navigator.of(context).pop(false); // Dismiss the dialog, return false
+                Navigator.of(context).pop(false);
               },
             ),
             TextButton(
               child: Text('Delete', style: TextStyle(color: Colors.red)),
               onPressed: () {
-                Navigator.of(context).pop(true); // Dismiss the dialog, return true
+                Navigator.of(context).pop(true);
               },
             ),
           ],
@@ -850,79 +825,21 @@ class _EditDeviceScreenState extends State<EditDeviceScreen> {
     if (confirmDelete == true) {
       try {
         await dbService.deleteAppliance(applianceId: applianceId);
-        print("Device $applianceId successfully deleted via DatabaseService.");
+        print("Device $applianceId successfully deleted.");
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(content: Text("$applianceNameToDelete deleted successfully!"))
           );
-          Navigator.of(context).pop(); // Pop the AddDeviceScreen
+          Navigator.of(context).pop();
         }
       } catch (e) {
-        print("Error deleting device $applianceId via DatabaseService: $e");
+        print("Error deleting device: $e");
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(content: Text("Error deleting device: ${e.toString()}"))
           );
         }
       }
-    }
-  }
-  
-  // Fetch rooms from Firestore
-  void _fetchRoomsFromFirestore() async {
-    setState(() {
-      _isLoadingRooms = true;
-    });
-
-    try {
-      final userId = DatabaseService().getCurrentUserId();
-      if (userId == null) {
-        print("User not authenticated. Cannot fetch rooms.");
-        setState(() {
-          rooms = [];
-          roomIcons = {};
-          _isLoadingRooms = false;
-        });
-        return;
-      }
-
-      final roomsSnapshot = await FirebaseFirestore.instance
-          .collection('users')
-          .doc(userId)
-          .collection('Rooms') // Use the user-specific Rooms subcollection
-          .get();
-
-      final List<String> fetchedRooms = [];
-      final Map<String, IconData> fetchedIcons = {};
-
-      for (final doc in roomsSnapshot.docs) {
-        final data = doc.data();
-        final roomName = data['roomName'] as String?;
-        final iconCodePoint = data['icon'] as int?;
-
-        if (roomName != null && roomName.isNotEmpty) {
-          fetchedRooms.add(roomName);
-          fetchedIcons[roomName] = iconCodePoint != null
-              ? IconData(iconCodePoint, fontFamily: 'MaterialIcons')
-              : Icons.home;
-        }
-      }
-
-      setState(() {
-        rooms = fetchedRooms;
-        roomIcons = fetchedIcons;
-        _isLoadingRooms = false;
-      });
-
-      print("Fetched ${rooms.length} rooms from user's Rooms subcollection");
-
-    } catch (e) {
-      print("Error fetching rooms from user's subcollection: $e");
-      setState(() {
-        rooms = [];
-        roomIcons = {};
-        _isLoadingRooms = false;
-      });
     }
   }
 }

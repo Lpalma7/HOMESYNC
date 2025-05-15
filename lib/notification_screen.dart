@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:homesync/notification_settings.dart';
+import 'package:homesync/homepage_screen.dart';
 
 class NotificationScreen extends StatefulWidget {
   const NotificationScreen({super.key});
@@ -82,9 +83,7 @@ class _NotificationScreenState extends State<NotificationScreen> {
               children: [
                 IconButton(
                   icon: Icon(Icons.arrow_back, size: 50, color: Colors.black),
-                  onPressed: () {
-                    Navigator.pop(context);
-                  },
+                  onPressed: ()  => Navigator.of(context).pop(), 
                 ),
                  Transform.translate( //title
               offset: Offset(1,-1),
