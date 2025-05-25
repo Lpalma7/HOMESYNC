@@ -6,7 +6,7 @@ import 'package:homesync/signup_screen.dart';
 import 'package:homesync/welcome_screen.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:homesync/homepage_screen.dart';
-import 'package:homesync/usage.dart'; // Import UsageService
+// Import UsageService
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});

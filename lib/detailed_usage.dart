@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:homesync/usage.dart'; // Import UsageTracker
+// Import UsageTracker
 import 'package:intl/intl.dart'; // Import for date formatting
-import 'package:homesync/usage.dart'; // Import for StringExtension
+// Import for StringExtension
 
 class OverallDetailedUsageScreen extends StatefulWidget {
   final String selectedPeriod; // e.g., 'daily', 'weekly', 'monthly', 'yearly'

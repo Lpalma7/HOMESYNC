@@ -1,8 +1,17 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:intl/intl.dart';
 
 class DeviceUsage extends StatefulWidget {
-  const DeviceUsage({super.key});
+  final String userId;
+  final String applianceId;
+
+  const DeviceUsage({
+    super.key,
+    required this.userId,
+    required this.applianceId,
+  });
 
   @override
   State<DeviceUsage> createState() => DeviceUsageState();
@@ -98,57 +107,110 @@ class DeviceUsageState extends State<DeviceUsage> with SingleTickerProviderState
   }
 
 
+  // Helper to get week of month (1-5) for a given date
+  // Week 1: days 1-7, Week 2: days 8-14, ..., Week 5: days 29-31
+  int getWeekOfMonth(DateTime date) {
+    return ((date.day - 1) ~/ 7) + 1;
+  }
+
   Widget buildYearlyUsage() {
-    return ListView(
-      
-      children: [
-        
-        usageTile('', '2025', '15.84', '₱155.72', showCircle: false),
-      ],
+    final String currentYear = DateTime.now().year.toString();
+    final String path = '/users/${widget.userId}/appliances/${widget.applianceId}/yearly_usage/$currentYear';
+
+    return FutureBuilder<DocumentSnapshot>(
+      future: FirebaseFirestore.instance.doc(path).get(),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return Center(child: CircularProgressIndicator());
+        }
+        if (snapshot.hasError) {
+          return Center(child: Text('Error fetching yearly data: ${snapshot.error}'));
+        }
+        if (!snapshot.hasData || !snapshot.data!.exists) {
+          return Center(child: Text('No usage data for $currentYear.'));
+        }
+
+        final data = snapshot.data!.data() as Map<String, dynamic>;
+        final kwh = data['kwh']?.toString() ?? 'N/A';
+        final kwhrcost = data['kwhrcost']?.toString() ?? 'N/A';
+
+        // Yearly display: "{year}" '{kwh specific value in that year}' '{kwhrcost specific value in that year}'
+        return ListView(
+          children: [
+            usageTile(
+              '', // leading is not used for yearly as showCircle is false
+              currentYear, // title: {year}
+              kwh, // usage (removed ' kWh' suffix)
+              '₱$kwhrcost', // cost
+              showCircle: false,
+            ),
+          ],
+        );
+      },
     );
   }
 
   Widget buildMonthlyUsage() {
-    final months = [
-      'December', 'November', 'October', 'September', 'August', 'July', 'June', 'May'
-    ];
+    final String currentYear = DateTime.now().year.toString();
+    // Using DateFormat.MMMM().dateSymbols.MONTHS to get localized month names
+    final List<String> monthNames = DateFormat.MMMM().dateSymbols.MONTHS; // Still Jan to Dec
 
     return ListView.builder(
-      itemCount: months.length,
-      itemBuilder: (context, index) {
-        return usageTile((12 - index).toString(), months[index], '1.32', '₱12.98');
+      itemCount: monthNames.length, // Iterate 12 times
+      itemBuilder: (context, i) { // Use 'i' for the direct loop index 0..11
+        // To get reverse chronological order (Dec, Nov, ... Jan)
+        final int reversedIndex = monthNames.length - 1 - i; // 11, 10, ..., 0
+        final String monthName = monthNames[reversedIndex]; // December, November, ...
+        final int monthNumber = reversedIndex + 1; // 12, 11, ...
+        
+        final String monthDocId = "${monthName}_usage"; // e.g., "December_usage"
+        final String path = '/users/${widget.userId}/appliances/${widget.applianceId}/yearly_usage/$currentYear/monthly_usage/$monthDocId';
+
+        return FutureBuilder<DocumentSnapshot>(
+          future: FirebaseFirestore.instance.doc(path).get(),
+          builder: (context, snapshot) {
+            String displayKwh = 'Loading...';
+            String displayCost = 'Loading...';
+
+            if (snapshot.connectionState == ConnectionState.done) {
+              if (snapshot.hasError || !snapshot.data!.exists) {
+                displayKwh = 'N/A';
+                displayCost = 'N/A';
+              } else {
+                final data = snapshot.data!.data() as Map<String, dynamic>;
+                displayKwh = data['kwh']?.toString() ?? 'N/A'; // Removed ' kWh' suffix
+                displayCost = '₱${data['kwhrcost']?.toString() ?? 'N/A'}';
+              }
+            }
+            
+            return usageTile(
+              monthNumber.toString(), 
+              monthName, 
+              displayKwh,
+              displayCost,
+            );
+          },
+        );
       },
     );
   }
 
   Widget buildWeeklyUsage() {
-    return ListView(
-      children: [
-        Padding(
-          padding: EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-          child: Text(
-            "June",
-            style: GoogleFonts.jaldi(
-              fontSize: 25,
-              fontWeight: FontWeight.w600,
-              color: Colors.black,
-            ),
-          ),
-        ),
-        
-        usageTile('5', 'Week 5', '1.32', '₱12.98'),
-        usageTile('4', 'Week 4', '1.32', '₱12.98'),
-        usageTile('3', 'Week 3', '1.32', '₱12.98'),
-        usageTile('2', 'Week 2', '1.32', '₱12.98'),
-        usageTile('1', 'Week 1', '1.32', '₱12.98'),
+    final DateTime now = DateTime.now();
+    final String currentYear = now.year.toString();
+    List<Widget> weeklyWidgets = [];
 
-        const SizedBox(height: 20),
-        const Divider(thickness: 1.5),
-        
+    // Display weeks for the current month and the previous month
+    for (int monthOffset = 0; monthOffset < 2; monthOffset++) { 
+      DateTime monthToDisplay = DateTime(now.year, now.month - monthOffset, 1);
+      String monthName = DateFormat.MMMM().format(monthToDisplay);
+      String monthDocId = "${monthName}_usage";
+
+      weeklyWidgets.add(
         Padding(
           padding: EdgeInsets.symmetric(horizontal: 20, vertical: 10),
           child: Text(
-            "May",
+            monthName, // Month Name Header (e.g., "June")
             style: GoogleFonts.jaldi(
               fontSize: 25,
               fontWeight: FontWeight.w600,
@@ -156,30 +218,101 @@ class DeviceUsageState extends State<DeviceUsage> with SingleTickerProviderState
             ),
           ),
         ),
-        // May weeks 5 to 1
-        usageTile('5', 'Week 5', '1.32', '₱12.98'),
-        usageTile('4', 'Week 4', '1.32', '₱12.98'),
-        usageTile('3', 'Week 3', '1.32', '₱12.98'),
-        usageTile('2', 'Week 2', '1.32', '₱12.98'),
-        usageTile('1', 'Week 1', '1.32', '₱12.98'),
-      ],
-    );
+      );
+
+      // Iterate 5 weeks for the month, in reverse order (Week 5, 4, 3, 2, 1)
+      for (int weekNumberInMonth = 5; weekNumberInMonth >= 1; weekNumberInMonth--) {
+        final String weekDocId = "week${weekNumberInMonth}_usage";
+        final String path = '/users/${widget.userId}/appliances/${widget.applianceId}/yearly_usage/$currentYear/monthly_usage/$monthDocId/week_usage/$weekDocId';
+        
+        String weekTitle = "Week $weekNumberInMonth";
+
+        weeklyWidgets.add(
+          FutureBuilder<DocumentSnapshot>(
+            future: FirebaseFirestore.instance.doc(path).get(),
+            builder: (context, snapshot) {
+              String displayKwh = 'Loading...';
+              String displayCost = 'Loading...';
+
+              if (snapshot.connectionState == ConnectionState.done) {
+                if (snapshot.hasError || !snapshot.data!.exists) {
+                  displayKwh = 'N/A';
+                  displayCost = 'N/A';
+                } else {
+                  final data = snapshot.data!.data() as Map<String, dynamic>;
+                  displayKwh = data['kwh']?.toString() ?? 'N/A'; // Removed ' kWh' suffix
+                  displayCost = '₱${data['kwhrcost']?.toString() ?? 'N/A'}';
+                }
+              }
+              return usageTile(
+                weekNumberInMonth.toString(), 
+                weekTitle, 
+                displayKwh,
+                displayCost,
+              );
+            },
+          )
+        );
+      }
+      if (monthOffset < 1) { // Add divider if not the last month group
+         weeklyWidgets.add(const SizedBox(height: 20));
+         weeklyWidgets.add(const Divider(thickness: 1.5));
+      }
+    }
+    return ListView(children: weeklyWidgets);
   }
 
   Widget buildDailyUsage() {
-    final days = [
-      'May 31, (Monday)', 'May 30, (Sunday)', 'May 29, (Saturday)', 'May 28, (Friday)',
-      'May 27, (Thursday)', 'May 26, (Wednesday)', 'May 25, (Tuesday)', 'May 24, (Monday)', 
-      'May 23, (Sunday)', 'May 22, (Saturday)', 'May 21, (Friday)', 'May 20, (Thursday)'
-    ];
-    
-    return ListView(
-      children: days.asMap().entries.map((entry) {
-        int index = entry.key;
-        String day = entry.value;
-        return usageTile((31 - index).toString(), day, '1.32', '₱12.98');
-      }).toList(),
-    );
+    List<Widget> dailyWidgets = [];
+    DateTime today = DateTime.now();
+
+    // Display usage for the last 14 days
+    for (int i = 0; i < 14; i++) {
+      DateTime dateToDisplay = today.subtract(Duration(days: i));
+      
+      String year = dateToDisplay.year.toString();
+      String monthName = DateFormat.MMMM().format(dateToDisplay);
+      String monthDocId = "${monthName}_usage";
+      
+      int weekOfMonthNumber = getWeekOfMonth(dateToDisplay); // Helper method
+      String weekDocId = "week${weekOfMonthNumber}_usage";
+      
+      String dayDocId = DateFormat('yyyy-MM-dd').format(dateToDisplay); // Format YYYY-MM-DD
+
+      final String path = '/users/${widget.userId}/appliances/${widget.applianceId}/yearly_usage/$year/monthly_usage/$monthDocId/week_usage/$weekDocId/day_usage/$dayDocId';
+
+      // Daily display: "number of day" "Month date, name of the day" '{kwh}' '{kwhrcost}'
+      String leadingText = dateToDisplay.day.toString(); // "number of day"
+      String titleText = DateFormat('MMMM d, EEEE').format(dateToDisplay); // "Month date, name of the day"
+
+      dailyWidgets.add(
+        FutureBuilder<DocumentSnapshot>(
+          future: FirebaseFirestore.instance.doc(path).get(),
+          builder: (context, snapshot) {
+            String displayKwh = 'Loading...';
+            String displayCost = 'Loading...';
+
+            if (snapshot.connectionState == ConnectionState.done) {
+              if (snapshot.hasError || !snapshot.data!.exists) {
+                displayKwh = 'N/A';
+                displayCost = 'N/A';
+              } else {
+                final data = snapshot.data!.data() as Map<String, dynamic>;
+                displayKwh = data['kwh']?.toString() ?? 'N/A'; // Removed ' kWh' suffix
+                displayCost = '₱${data['kwhrcost']?.toString() ?? 'N/A'}';
+              }
+            }
+            return usageTile(
+              leadingText,
+              titleText,
+              displayKwh,
+              displayCost,
+            );
+          },
+        )
+      );
+    }
+    return ListView(children: dailyWidgets);
   }
 
   @override

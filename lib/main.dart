@@ -18,9 +18,9 @@ import 'firebase_options.dart'; // Import firebase_options.dart
 import 'package:homesync/deviceinfo.dart'; // Import deviceinfo.dart
 import 'package:homesync/editdevice.dart'; // Import editdevice.dart
 import 'package:homesync/profile_screen.dart';
-import 'package:homesync/databaseservice.dart'; // Import DatabaseService
-import 'package:homesync/usage.dart'; // Import usage.dart for sumAllAppliancesKwh and sumAllAppliancesKwhr
-import 'package:firebase_auth/firebase_auth.dart'; // Import FirebaseAuth
+// Import DatabaseService
+// Import usage.dart for sumAllAppliancesKwh and sumAllAppliancesKwhr
+// Import FirebaseAuth
 import 'package:homesync/device_usage.dart';
 
 
@@ -76,7 +76,27 @@ class MyApp extends StatelessWidget {
           );
         },
        '/profile':(context) => ProfileScreen(),
-       '/deviceusage':(context) => DeviceUsage(),
+       '/deviceusage':(context) {
+          // Attempt to get arguments. If DeviceUsage is navigated to without arguments,
+          // this will cause an error or require default/null handling.
+          // For now, let's assume arguments are passed similar to DeviceInfoScreen.
+          final args = ModalRoute.of(context)?.settings.arguments as Map<String, dynamic>?;
+          final String userId = args?['userId'] as String? ?? "DEFAULT_USER_ID"; // Provide a fallback or handle null
+          final String applianceId = args?['applianceId'] as String? ?? "DEFAULT_APPLIANCE_ID"; // Provide a fallback or handle null
+
+          // It's crucial that DeviceUsage is prepared to handle these potentially default/invalid IDs,
+          // for example, by showing an error message or an empty state.
+          if (userId == "DEFAULT_USER_ID" || applianceId == "DEFAULT_APPLIANCE_ID") {
+            // Optionally, return a screen indicating that parameters are missing
+            // For now, we'll proceed, and DeviceUsage should handle it.
+            print("Warning: Navigating to /deviceusage without proper userId or applianceId arguments.");
+          }
+          
+          return DeviceUsage(
+            userId: userId,
+            applianceId: applianceId,
+          );
+        },
 
 
 

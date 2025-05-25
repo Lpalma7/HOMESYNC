@@ -10,7 +10,7 @@ import 'package:homesync/profile_screen.dart';
 import 'package:cloud_firestore/cloud_firestore.dart'; // Import Firestore
 import 'package:firebase_auth/firebase_auth.dart'; // Import FirebaseAuth
 import 'dart:async'; // Import for StreamSubscription
-import 'package:intl/intl.dart'; // Import for date formatting
+// Import for date formatting
 // Import OverallDetailedUsageScreen
 
 // TODO: Replace 'YOUR_API_KEY' with your actual OpenWeatherMap API key
@@ -676,14 +676,22 @@ Widget _buildNavButton(String title, bool isSelected, int index) { // nav bar fu
             _selectedIndex = index;
           });
           
+          setState(() {
+            _selectedIndex = index;
+          });
+          
+          // Only navigate for 'Appliance' and 'Rooms'. 
+          // 'Electricity' (index 0) will just update the selected state,
+          // assuming the main content of HomepageScreen is the "Electricity" view.
           switch (index) {
             case 0:
-              Navigator.pushNamed(context, '/electricity');
+              // Do nothing further, just update _selectedIndex to show this tab as active.
+              // The content for "Electricity" is assumed to be the default view of HomepageScreen.
               break;
-            case 1:
+            case 1: // Appliance
               Navigator.pushNamed(context, '/devices');
               break;
-            case 2:
+            case 2: // Rooms
               Navigator.pushNamed(context, '/rooms');
               break;
           }
@@ -910,7 +918,9 @@ Widget _buildDeviceItem(String id, String name, String usage, IconData icon) { /
       // If not, explicitly call _listenToSummaryUsage() and _listenToAppliances()
       _listenToSummaryUsage(); // Re-listen to ensure UI updates with latest overall totals
       _listenToAppliances();   // Re-listen to ensure appliance list is fresh (if it could change)
+      _fetchWeather(); // Fetch the latest weather data
 
+      if (!mounted) return; // Check if the widget is still in the tree
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Usage data refreshed!')),
       );
