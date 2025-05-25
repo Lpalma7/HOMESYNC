@@ -38,7 +38,7 @@ class RoomDataManager {
           'deviceType': deviceType,
           'relay': data['relay'] as String? ?? '',
           'icon': data['icon'] is int ? data['icon'] as int : 0xe333, // Default icon if not present
-          'kwh': data['kwh'] is num ? (data['kwh'] as num).toDouble() : 0.0,
+          'wattage': data['wattage'] is num ? (data['wattage'] as num).toDouble() : 0.0,
           'startTime': data['startTime'] as String? ?? '',
           'endTime': data['endTime'] as String? ?? '',
           'days': data['days'] is List ? List<String>.from(data['days'] as List) : <String>[],

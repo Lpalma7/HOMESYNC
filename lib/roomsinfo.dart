@@ -1,11 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:homesync/adddevices.dart';
-import 'package:homesync/editdevice.dart'; // Import EditDeviceScreen
+// Import EditDeviceScreen
 import 'package:homesync/relay_state.dart'; // Re-adding for relay state management
 import 'package:homesync/databaseservice.dart';
 import 'package:homesync/room_data_manager.dart'; // Re-adding for room data management
 import 'package:homesync/devices_screen.dart'; // Import DeviceCard from devices_screen.dart
+import 'package:homesync/usage.dart'; // Import UsageTracker
 import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart'; // For QueryDocumentSnapshot
 import 'package:firebase_auth/firebase_auth.dart'; // For user authentication
@@ -26,10 +27,12 @@ class RoomsinfoState extends State<Roomsinfo> {
   StreamSubscription? _appliancesSubscription;
   List<QueryDocumentSnapshot<Map<String, dynamic>>> _roomDevices = [];
   String _roomType = 'Unknown Type'; // State variable for room type
+  UsageService? _usageService;
 
   @override
   void initState() {
     super.initState();
+    _usageService = UsageService(); // Initialize UsageService
     _listenForRelayStateChanges(); // Start listening for relay changes
     _listenToRoomAppliances();
     _fetchRoomType(); // Fetch room type
@@ -169,6 +172,25 @@ class RoomsinfoState extends State<Roomsinfo> {
           .collection('appliances')
           .doc(applianceId)
           .update({'applianceStatus': newStatus});
+
+      // Call UsageService to handle the toggle
+      final userUid = FirebaseAuth.instance.currentUser!.uid;
+      final double wattage = (deviceData['wattage'] is num) ? (deviceData['wattage'] as num).toDouble() : 0.0;
+
+      // Fetch user's kWh rate
+      DocumentSnapshot userSnap = await FirebaseFirestore.instance.collection('users').doc(userUid).get();
+      double kwhrRate = DEFAULT_KWHR_RATE; // Use default from usage.dart
+      if (userSnap.exists && userSnap.data() != null) {
+          kwhrRate = ((userSnap.data() as Map<String,dynamic>)['kwhr'] as num?)?.toDouble() ?? DEFAULT_KWHR_RATE;
+      }
+
+      await _usageService?.handleApplianceToggle(
+        userId: userUid,
+        applianceId: applianceId,
+        isOn: newStatus == 'ON',
+        wattage: wattage,
+        kwhrRate: kwhrRate,
+      );
           
       print("Device $applianceId toggled successfully");
     } catch (e) {

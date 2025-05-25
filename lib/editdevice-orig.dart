@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:homesync/databaseservice.dart';
-import 'package:cloud_firestore/cloud_firestore.dart'; // Import Firestore
 
 class EditDeviceScreen extends StatefulWidget {
   final String applianceId;
@@ -13,17 +12,14 @@ class EditDeviceScreen extends StatefulWidget {
 
 class _EditDeviceScreenState extends State<EditDeviceScreen> {
   // Add a list of available relays
-  // Add a list of all possible relays
-  final List<String> _allRelays = List.generate(9, (index) => 'relay${index + 1}');
-  // List to hold available relays after filtering
-  List<String> _availableRelays = [];
+  List<String> relays = List.generate(9, (index) => 'relay${index + 1}');
 
   bool isEditing = false;
   bool _isLoading = true;
 
   final TextEditingController applianceNameController = TextEditingController();
-  final TextEditingController wattageController = TextEditingController();
-  final TextEditingController roomController = TextEditingController();
+  final TextEditingController kwhController = TextEditingController();
+  final TextEditingController roomController = TextEditingController(); // Use this instead of dropdown
   final TextEditingController relayController = TextEditingController(); // For relay name
 
   String? selectedRelay;
@@ -33,9 +29,6 @@ class _EditDeviceScreenState extends State<EditDeviceScreen> {
   String? selectedRoom;
   List<String> rooms = [];
   Map<String, IconData> roomIcons = {};
-
-  // State variable for room names
-  List<String> _roomNames = [];
 
   TimeOfDay? startTime;
   TimeOfDay? endTime;
@@ -72,22 +65,20 @@ class _EditDeviceScreenState extends State<EditDeviceScreen> {
 
   // validation errors
   String? applianceNameError;
-  String? wattageError;
+  String? kwhError;
   String? roomError;
   String? socketError;
+  String? timeError;
   String? daysError;
 
   @override
   void initState() {
     super.initState();
     // Initialize error states
-    wattageError = null;
-    roomError = null;
-    socketError = null;
+    timeError = null;
     daysError = null;
     
     _fetchDeviceData();
-    _fetchRooms(); // Fetch rooms when the state is initialized
   }
 
   void _fetchDeviceData() async {
@@ -97,7 +88,7 @@ class _EditDeviceScreenState extends State<EditDeviceScreen> {
         setState(() {
           isEditing = true;
           applianceNameController.text = deviceData['applianceName'] as String;
-          wattageController.text = (deviceData['wattage'] ?? 0.0).toString();
+          kwhController.text = (deviceData['kwh'] ?? 0.0).toString();
           
           // Store room in controller and selectedRoom
           selectedRoom = deviceData['roomName'] as String?;
@@ -143,7 +134,6 @@ class _EditDeviceScreenState extends State<EditDeviceScreen> {
           
           _isLoading = false;
         });
-        await _fetchAndFilterRelays(); // Call after fetching device data
       } else {
         // Handle case where device data is not found
         print("Device with ID ${widget.applianceId} not found.");
@@ -162,84 +152,6 @@ class _EditDeviceScreenState extends State<EditDeviceScreen> {
         );
         Navigator.of(context).pop();
       }
-    }
-  }
-
-  // Method to fetch room names from the database
-  Future<void> _fetchRooms() async {
-    print("Fetching rooms for EditDeviceScreen..."); // Debug print
-    final userId = DatabaseService().getCurrentUserId(); // Use DatabaseService to get user ID
-    if (userId == null) {
-      print("User not logged in, cannot fetch rooms for EditDeviceScreen.");
-      return;
-    }
-    print("Fetching rooms for user ID: $userId"); // Added debug print
-    try {
-      final roomDocs = await DatabaseService().getCollection(collectionPath: 'users/$userId/Rooms');
-      print("Fetched ${roomDocs.docs.length} room documents."); // Added debug print
-      final roomNames = roomDocs.docs.map((doc) => doc['roomName'] as String).toList();
-      if (mounted) {
-        setState(() {
-          _roomNames = roomNames;
-        });
-      }
-       print("Fetched rooms for EditDeviceScreen: $_roomNames"); // Debug print
-    } catch (e) {
-      print("Error fetching rooms for EditDeviceScreen: $e");
-      // Handle error, maybe show a message
-    }
-  }
-
-  Future<void> _fetchAndFilterRelays() async {
-    final userId = DatabaseService().getCurrentUserId();
-    if (userId == null) {
-      print("User not authenticated. Cannot fetch relay states.");
-      setState(() {
-        _availableRelays = [];
-      });
-      return;
-    }
-
-    try {
-      final relayStatesSnapshot = await FirebaseFirestore.instance
-          .collection('users')
-          .doc(userId)
-          .collection('relay_states')
-          .get();
-
-      final occupiedRelays = <String>{};
-      for (final doc in relayStatesSnapshot.docs) {
-        final data = doc.data();
-        // A relay is considered "occupied" if it exists in the relay_states collection
-        // and is not the relay of the device being edited (if in edit mode).
-        // Since we are removing the 'assigned' field, we will consider a relay occupied
-        // if a document for it exists in relay_states.
-        // We also need to ensure that if we are editing a device, its currently assigned
-        // relay is still considered available for selection.
-        if (isEditing && selectedRelay != null && doc.id == selectedRelay) {
-            // If we are editing and this is the current device's relay, it's available
-            continue;
-        }
-        occupiedRelays.add(doc.id);
-      }
-
-      setState(() {
-        _availableRelays = _allRelays.where((relay) => !occupiedRelays.contains(relay)).toList();
-        // If in edit mode and the current relay is not in the available list (meaning it was occupied by another device), add it back.
-        // This case should ideally not happen with the updated logic above, but as a safeguard:
-        if (isEditing && selectedRelay != null && !_availableRelays.contains(selectedRelay)) {
-           _availableRelays.add(selectedRelay!);
-           _availableRelays.sort(); // Keep the list sorted
-        }
-      });
-
-      print("Fetched and filtered relays. Available: ${_availableRelays.length}");
-
-    } catch (e) {
-      print("Error fetching and filtering relay states: $e");
-      setState(() {
-        _availableRelays = [];
-      });
     }
   }
 
@@ -314,64 +226,42 @@ class _EditDeviceScreenState extends State<EditDeviceScreen> {
                     errorText: applianceNameError
                   ),
                   _buildRequiredTextField(
-                    wattageController,
-                    "Wattage",
-                    Icons.energy_savings_leaf,
+                    kwhController, 
+                    "kWh", 
+                    Icons.energy_savings_leaf, 
                     keyboardType: TextInputType.number,
-                    errorText: wattageError
+                    errorText: kwhError
                   ),
+
                   SizedBox(height: 10),
                   
-                  Row(
-                    crossAxisAlignment: CrossAxisAlignment.center,
-                    children: [
-                      Expanded(
-                        child: DropdownButtonFormField<String>(
-                          decoration: InputDecoration(
-                            filled: true,
-                            fillColor: Colors.white,
-                            prefixIcon: Icon(Icons.home, size: 30, color: Colors.black),
-                            labelText: 'Room',
-                            labelStyle: GoogleFonts.jaldi(
-                              textStyle: TextStyle(fontSize: 20),
-                              color: Colors.grey, // Use grey for label like other text fields
-                            ),
-                            border: OutlineInputBorder(),
-                            errorText: roomError,
-                            contentPadding: EdgeInsets.symmetric(horizontal: 15, vertical: 17),
-                          ),
-                          dropdownColor: Colors.grey[200],
-                          style: GoogleFonts.jaldi(
-                            textStyle: TextStyle(fontSize: 18, color: Colors.black87),
-                          ),
-                          value: selectedRoom,
-                          items: _roomNames.map((roomName) {
-                            return DropdownMenuItem(
-                              value: roomName,
-                              child: Text(roomName),
-                            );
-                          }).toList(),
-                          onChanged: (value) {
-                            setState(() {
-                              selectedRoom = value;
-                              roomController.text = value ?? ''; // Update controller as well
-                              roomError = null;
-                            });
-                          },
-                          validator: (value) {
-                            if (value == null || value.isEmpty) {
-                              return "Room is required";
-                            }
-                            return null;
-                          },
-                        ),
+                  // Room input as TextFormField instead of dropdown
+                  TextFormField(
+                    controller: roomController,
+                    decoration: InputDecoration(
+                      filled: true,
+                      fillColor: Colors.white,
+                      prefixIcon: Icon(Icons.home, size: 30, color: Colors.black),
+                      labelText: 'Room',
+                      labelStyle: GoogleFonts.jaldi(
+                        textStyle: TextStyle(fontSize: 20),
+                        color: Colors.grey,
                       ),
-                      SizedBox(width: 8), // Add some spacing
-                      IconButton(
-                        icon: Icon(Icons.add, size: 30, color: Colors.black),
-                        onPressed: _addRoom,
-                      ),
-                    ],
+                      border: OutlineInputBorder(),
+                      errorText: roomError,
+                    ),
+                    onChanged: (value) {
+                      setState(() {
+                        selectedRoom = value;
+                        roomError = null;
+                      });
+                    },
+                    validator: (value) {
+                      if (value == null || value.isEmpty) {
+                        return "Room is required";
+                      }
+                      return null;
+                    },
                   ),
                   
                   SizedBox(height: 15),
@@ -419,7 +309,7 @@ class _EditDeviceScreenState extends State<EditDeviceScreen> {
                       border: OutlineInputBorder(),
                     ),
                     value: selectedRelay,
-                    items: _availableRelays.map((relay) {
+                    items: relays.map((relay) {
                       return DropdownMenuItem(
                         value: relay,
                         child: Text(relay),
@@ -447,7 +337,7 @@ class _EditDeviceScreenState extends State<EditDeviceScreen> {
                       color: Colors.white, 
                       borderRadius: BorderRadius.circular(20),
                       border: Border.all(
-                        color: socketError != null ? Colors.red : Colors.black // Using socketError here as usagetimeError is removed
+                        color: timeError != null ? Colors.red : Colors.black
                       ),
                     ),
                     child: Column(
@@ -480,7 +370,17 @@ class _EditDeviceScreenState extends State<EditDeviceScreen> {
                             ),
                           ],
                         ),
-                        // Removed usagetimeError check here
+                        if (timeError != null)
+                          Padding(
+                            padding: const EdgeInsets.only(left: 12, bottom: 8),
+                            child: Align(
+                              alignment: Alignment.centerLeft,
+                              child: Text(
+                                timeError!,
+                                style: TextStyle(color: Colors.red, fontSize: 12),
+                              ),
+                            ),
+                          ),
                       ],
                     ),
                   ),
@@ -710,6 +610,7 @@ class _EditDeviceScreenState extends State<EditDeviceScreen> {
       setState(() {
         startTime = presetTimes[preset]!['start'];
         endTime = presetTimes[preset]!['end'];
+        timeError = null;
       });
     }
   }
@@ -722,6 +623,7 @@ class _EditDeviceScreenState extends State<EditDeviceScreen> {
     if (picked != null) {
       setState(() {
         startTime = picked;
+        timeError = null;
       });
     }
   }
@@ -734,70 +636,12 @@ class _EditDeviceScreenState extends State<EditDeviceScreen> {
     if (picked != null) {
       setState(() {
         endTime = picked;
+        timeError = null;
       });
     }
   }
   
-  void _addRoom() async {
-    String? newRoomName = await showDialog<String>(
-      context: context,
-      builder: (BuildContext context) {
-        TextEditingController newRoomController = TextEditingController();
-        return AlertDialog(
-          title: Text('Add New Room'),
-          content: TextField(
-            controller: newRoomController,
-            decoration: InputDecoration(hintText: "Enter Room Name"),
-          ),
-          actions: <Widget>[
-            TextButton(
-              child: Text('Cancel'),
-              onPressed: () {
-                Navigator.of(context).pop();
-              },
-            ),
-            TextButton(
-              child: Text('Add'),
-              onPressed: () {
-                Navigator.of(context).pop(newRoomController.text.trim());
-              },
-            ),
-          ],
-        );
-      },
-    );
-
-    if (newRoomName != null && newRoomName.isNotEmpty) {
-      final userId = DatabaseService().getCurrentUserId();
-      if (userId != null) {
-        try {
-          // Add the new room to the database
-          await DatabaseService().addDocumentToCollection(
-            collectionPath: 'users/$userId/Rooms',
-            data: {'roomName': newRoomName},
-          );
-          // Refresh the room list
-          await _fetchRooms();
-          // Optionally select the newly added room
-          if (_roomNames.contains(newRoomName)) {
-            setState(() {
-              selectedRoom = newRoomName;
-              roomController.text = newRoomName;
-            });
-          }
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text("Room '$newRoomName' added successfully!"))
-          );
-        } catch (e) {
-          print("Error adding room: $e");
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text("Error adding room: ${e.toString()}"))
-          );
-        }
-      }
-    }
-  }
-
+  
   void _validateAndSubmitDevice() {
     // Checking req field
     bool isValid = true;
@@ -813,14 +657,14 @@ class _EditDeviceScreenState extends State<EditDeviceScreen> {
       });
     }
 
-    if (wattageController.text.isEmpty) {
+    if (kwhController.text.isEmpty) {
       setState(() {
-        wattageError = "Wattage is required";
+        kwhError = "kWh is required";
       });
       isValid = false;
     } else {
       setState(() {
-        wattageError = null;
+        kwhError = null;
       });
     }
 
@@ -833,7 +677,7 @@ class _EditDeviceScreenState extends State<EditDeviceScreen> {
       setState(() {
         roomError = null;
         // Make sure selectedRoom is set from controller
-        // selectedRoom is removed
+        selectedRoom = roomController.text;
       });
     }
 
@@ -849,10 +693,10 @@ class _EditDeviceScreenState extends State<EditDeviceScreen> {
     }
 
     // Time and days are optional
-    // setState(() { // Removed clearing timeError and daysError here as they are handled above
-    //   timeError = null;
-    //   daysError = null;
-    // });
+    setState(() {
+      timeError = null;
+      daysError = null;
+    });
 
     if (isValid) {
       if (isEditing) {
@@ -872,7 +716,7 @@ class _EditDeviceScreenState extends State<EditDeviceScreen> {
     final Map<String, dynamic> deviceData = {
       "applianceName": applianceNameController.text.trim(),
       "deviceType": deviceType,
-      "wattage": double.tryParse(wattageController.text) ?? 0.0,
+      "kwh": double.tryParse(kwhController.text) ?? 0.0,
       "roomName": roomName,
       "icon": selectedIcon.codePoint,
       "startTime": startTime != null ? "${startTime!.hour.toString().padLeft(2, '0')}:${startTime!.minute.toString().padLeft(2, '0')}" : null,
@@ -881,8 +725,9 @@ class _EditDeviceScreenState extends State<EditDeviceScreen> {
           .where((entry) => entry.value)
           .map((entry) => entry.key)
           .toList(),
-      "relay": selectedRelay,
+      "relay": selectedRelay, 
       "applianceStatus": 'OFF',
+      "presentHourlyusage": 0.0,
     };
 
     try {
@@ -914,7 +759,7 @@ class _EditDeviceScreenState extends State<EditDeviceScreen> {
     final Map<String, dynamic> updatedData = {
       "applianceName": applianceNameController.text.trim(),
       "deviceType": deviceType,
-      "wattage": double.tryParse(wattageController.text) ?? 0.0,
+      "kwh": double.tryParse(kwhController.text) ?? 0.0,
       "roomName": roomName,
       "icon": selectedIcon.codePoint,
       "startTime": startTime != null ? "${startTime!.hour.toString().padLeft(2, '0')}:${startTime!.minute.toString().padLeft(2, '0')}" : null,

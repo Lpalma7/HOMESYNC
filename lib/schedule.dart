@@ -15,7 +15,7 @@ class Schedule extends StatefulWidget {
 class ScheduleState extends State<Schedule> {
   final DatabaseService _dbService = DatabaseService();
   final TextEditingController applianceNameController = TextEditingController();
-  final TextEditingController kwhController = TextEditingController();
+  final TextEditingController wattageController = TextEditingController();
   final TextEditingController roomController = TextEditingController(); // Using text field instead of dropdown
   final TextEditingController socketController = TextEditingController(); // For relay name
 
@@ -53,7 +53,7 @@ class ScheduleState extends State<Schedule> {
   Map<String, dynamic>? _initialApplianceData; // To store original data for status preservation
 
   String? applianceNameError;
-  String? kwhError;
+  String? wattageError;
   String? roomError;
   String? socketError; // For relay
   String? timeError;
@@ -113,7 +113,7 @@ class ScheduleState extends State<Schedule> {
 
         setState(() {
           applianceNameController.text = data['applianceName'] ?? '';
-          kwhController.text = (data['kwh'] ?? 0.0).toString();
+          wattageController.text = (data['wattage'] ?? 0.0).toString();
           
           // Set room to both controller and selectedRoom
           selectedRoom = data['roomName'];
@@ -244,11 +244,11 @@ class ScheduleState extends State<Schedule> {
                   ),
 
                   _buildRequiredTextField(
-                    kwhController,
-                    "KWH",
+                    wattageController,
+                    "Wattage",
                     Icons.energy_savings_leaf,
                     keyboardType: TextInputType.number,
-                    errorText: kwhError
+                    errorText: wattageError
                   ),
 
                   SizedBox(height: 10),
@@ -614,7 +614,7 @@ class ScheduleState extends State<Schedule> {
     bool isValid = true;
     setState(() {
       applianceNameError = null;
-      kwhError = null;
+      wattageError = null;
       roomError = null;
       socketError = null;
       timeError = null;
@@ -626,11 +626,11 @@ class ScheduleState extends State<Schedule> {
       isValid = false;
     }
     
-    if (kwhController.text.isEmpty) {
-      setState(() { kwhError = "KWH is required"; });
+    if (wattageController.text.isEmpty) {
+      setState(() { wattageError = "Wattage is required"; });
       isValid = false;
-    } else if (double.tryParse(kwhController.text) == null) {
-      setState(() { kwhError = "Invalid KWH value"; });
+    } else if (double.tryParse(wattageController.text) == null) {
+      setState(() { wattageError = "Invalid Wattage value"; });
       isValid = false;
     }
     
@@ -658,7 +658,7 @@ class ScheduleState extends State<Schedule> {
     final Map<String, dynamic> firestoreData = {
       'applianceName': applianceNameController.text.trim(),
       'deviceType': deviceType,
-      'kwh': double.tryParse(kwhController.text) ?? 0.0,
+      'wattage': double.tryParse(wattageController.text) ?? 0.0,
       'roomName': selectedRoom!,
       'icon': selectedIcon.codePoint,
       'startTime': startTime != null ? "${startTime!.hour.toString().padLeft(2, '0')}:${startTime!.minute.toString().padLeft(2, '0')}" : null,

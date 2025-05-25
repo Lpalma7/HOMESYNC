@@ -6,6 +6,7 @@ import 'package:homesync/welcome_screen.dart';
 import 'package:homesync/relay_state.dart'; // Re-adding for relay state management
 import 'package:homesync/databaseservice.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:homesync/usage.dart'; // Import UsageTracker
 import 'dart:async';
 import 'dart:math'; // For min function
 import 'package:firebase_auth/firebase_auth.dart'; // Added import for FirebaseAuth
@@ -31,13 +32,19 @@ class DevicesScreenState extends State<DevicesScreen> {
   // Local state for master power button visual, true if it's in "ON" commanding mode
   bool _masterPowerButtonState = false;
 
+  // UsageService instance
+  UsageService? _usageService;
+
 
   @override
   void initState() {
     super.initState();
+    _usageService = UsageService(); // Initialize UsageService
     _listenToAppliances();
     _listenForRelayStateChanges();
     _updateMasterPowerButtonVisualState();
+
+    // User authentication check is handled within methods that need userId.
   }
 
   void _listenForRelayStateChanges() {
@@ -62,6 +69,8 @@ class DevicesScreenState extends State<DevicesScreen> {
               if (data['state'] != null) {
                 setState(() {
                   RelayState.relayStates[relay] = data['state'] as int;
+                  // Also read the irControlled flag
+                  RelayState.irControlledStates[relay] = data['irControlled'] as bool? ?? false;
                 });
               }
             }
@@ -191,7 +200,7 @@ class DevicesScreenState extends State<DevicesScreen> {
                 .doc(userUid)
                 .collection('relay_states')
                 .doc(relayKey)
-                .set({'state': 0})
+                .update({'state': 0}) // Use update instead of set
           );
         }
 
@@ -233,6 +242,48 @@ class DevicesScreenState extends State<DevicesScreen> {
       return;
     }
 
+    // Get the relay associated with this appliance using applianceName
+    final deviceDoc = _devices.firstWhere((doc) => doc.data()['applianceName'] == applianceName);
+    final deviceData = deviceDoc.data();
+    final String relayKey = deviceData['relay'] as String? ?? '';
+
+    // Check if the relay is currently IR controlled AND the user is trying to turn it OFF
+    if (RelayState.irControlledStates[relayKey] == true && currentStatus == 'ON') {
+       // Show confirmation dialog
+       bool confirmTurnOff = await showDialog(
+         context: context,
+         builder: (BuildContext context) {
+           return AlertDialog(
+             title: Text("Confirm Turn Off"),
+             content: Text("This device is currently controlled by IR. Do you want to force it OFF?"),
+             actions: <Widget>[
+               TextButton(
+                 child: Text("Cancel"),
+                 onPressed: () {
+                   Navigator.of(context).pop(false); // Return false on cancel
+                 },
+               ),
+               TextButton(
+                 child: Text("Turn Off"),
+                 onPressed: () {
+                   Navigator.of(context).pop(true); // Return true on confirm
+                 },
+               ),
+             ],
+           );
+         },
+       ) ?? false; // Default to false if dialog is dismissed
+
+       if (!confirmTurnOff) {
+         return; // If user cancels, do not proceed
+       }
+       // If user confirms, proceed to turn off
+    } else if (RelayState.irControlledStates[relayKey] == true && currentStatus == 'OFF') {
+        // If IR is controlling and the device is already OFF, allow toggling ON
+        // No confirmation needed in this case based on the prompt
+    }
+
+
     final newStatus = currentStatus == 'ON' ? 'OFF' : 'ON';
     try {
       print("Toggling device $applianceName from $currentStatus to $newStatus");
@@ -256,7 +307,7 @@ class DevicesScreenState extends State<DevicesScreen> {
             .doc(userUid)
             .collection('relay_states')
             .doc(relayKey)
-            .set({'state': newRelayState});
+            .update({'state': newRelayState});
       }
 
       // Update appliance status in Firestore directly using the document ID
@@ -269,6 +320,28 @@ class DevicesScreenState extends State<DevicesScreen> {
           .update({'applianceStatus': newStatus});
 
       print("Device $applianceName toggled successfully");
+
+      // Record usage time after successful toggle
+      final userUid = FirebaseAuth.instance.currentUser!.uid;
+      final applianceId = deviceDoc.id;
+      final double wattage = (deviceData['wattage'] is num) ? (deviceData['wattage'] as num).toDouble() : 0.0; // Fetch wattage
+
+      // Fetch user's kWh rate
+      DocumentSnapshot userSnap = await FirebaseFirestore.instance.collection('users').doc(userUid).get();
+      double kwhrRate = DEFAULT_KWHR_RATE; // Use default from usage.dart
+      if (userSnap.exists && userSnap.data() != null) {
+          kwhrRate = ((userSnap.data() as Map<String,dynamic>)['kwhr'] as num?)?.toDouble() ?? DEFAULT_KWHR_RATE;
+      }
+
+      // Call UsageService to handle the toggle
+      await _usageService?.handleApplianceToggle(
+        userId: userUid,
+        applianceId: applianceId,
+        isOn: newStatus == 'ON',
+        wattage: wattage,
+        kwhrRate: kwhrRate,
+      );
+
     } catch (e) {
       print("Error toggling device $applianceName: $e");
       if (mounted) {
@@ -278,7 +351,6 @@ class DevicesScreenState extends State<DevicesScreen> {
       }
     }
   }
-
 
   @override
   Widget build(BuildContext context) {
@@ -755,14 +827,20 @@ class DeviceCard extends StatelessWidget {
           right: 9,
           child: InkWell(
             onTap: () {
-              // Navigate to schedule or edit screen
-              Navigator.pushNamed(
-                context,
-                '/editdevice',
-                arguments: {
-                  'applianceId': applianceId,
-                },
-              );
+              if (applianceStatus == 'ON') {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text("Turn off the appliance before editing.")),
+                );
+              } else {
+                // Navigate to schedule or edit screen
+                Navigator.pushNamed(
+                  context,
+                  '/editdevice',
+                  arguments: {
+                    'applianceId': applianceId,
+                  },
+                );
+              }
             },
             child: Container(
               padding: EdgeInsets.all(4),

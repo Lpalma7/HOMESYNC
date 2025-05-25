@@ -3,6 +3,13 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:homesync/databaseservice.dart';
 // Import RoomDataManager
 import 'package:cloud_firestore/cloud_firestore.dart'; // Import Firestore
+import 'package:intl/intl.dart'; // Import the intl package for date formatting
+import 'package:firebase_auth/firebase_auth.dart'; // Import FirebaseAuth
+
+// Function to check if a year is a leap year
+bool isLeapYear(int year) {
+  return (year % 4 == 0 && year % 100 != 0) || (year % 400 == 0);
+}
 
 class AddDeviceScreen extends StatefulWidget {
   final Map<String, dynamic>? deviceData; // Optional device data for editing
@@ -14,30 +21,31 @@ class AddDeviceScreen extends StatefulWidget {
 }
 
 class _AddDeviceScreenState extends State<AddDeviceScreen> {
-  // Add a list of available relays
-  List<String> relays = List.generate(9, (index) => 'relay${index + 1}');
+  // Add a list of all possible relays
+  final List<String> _allRelays = List.generate(9, (index) => 'relay${index + 1}');
+  // List to hold available relays after filtering
+  List<String> _availableRelays = [];
 
   bool isEditing = false; // Flag to indicate if in edit mode
+  bool _isLoading = true; // Combined loading state for rooms and relays
 
   final TextEditingController applianceNameController = TextEditingController();
-  final TextEditingController kwhController = TextEditingController();
+  final TextEditingController wattageController = TextEditingController();
   final TextEditingController roomController = TextEditingController();
   final TextEditingController socketController = TextEditingController();
 
-  // Inside the _AddDeviceScreenState class
   String? selectedRelay;
-  
+
   final _formKey = GlobalKey<FormState>();
 
   String deviceType = 'Light';
   String? selectedRoom;
   List<String> rooms = [];
   Map<String, IconData> roomIcons = {};
-  bool _isLoadingRooms = true;
 
   TimeOfDay? startTime;
   TimeOfDay? endTime;
-  
+
   // Preset time periods
   final Map<String, Map<String, TimeOfDay>> presetTimes = {
     'Morning': {
@@ -53,7 +61,7 @@ class _AddDeviceScreenState extends State<AddDeviceScreen> {
       'end': TimeOfDay(hour: 23, minute: 0),
     },
   };
-  
+
   // Repeating days
   final List<String> weekdays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
   Map<String, bool> selectedDays = {
@@ -70,7 +78,7 @@ class _AddDeviceScreenState extends State<AddDeviceScreen> {
 
   // validation errors
   String? applianceNameError;
-  String? kwhError;
+  String? wattageError;
   String? roomError;
   String? socketError;
   String? timeError;
@@ -79,51 +87,132 @@ class _AddDeviceScreenState extends State<AddDeviceScreen> {
   @override
   void initState() {
     super.initState();
-    _fetchRoomsFromFirestore();
-    
+    _fetchInitialData(); // Fetch rooms and relays
+
     // Initialize error states to null to prevent showing errors initially
     timeError = null;
     daysError = null;
-    
+  }
+
+  void _fetchInitialData() async {
+    setState(() {
+      _isLoading = true;
+    });
+
+    // Await both fetching functions before setting isLoading to false
+    await _fetchRoomsFromFirestore();
+    await _fetchAndFilterRelays();
+
     if (widget.deviceData != null) {
       isEditing = true;
       // Populate fields with existing device data
-      // Assuming widget.deviceData contains the 'id' (applianceId) from Firestore
       final String? editingId = widget.deviceData!['id'] as String?;
-      // We'll use editingId to call DatabaseService methods if needed for update/delete.
-      // For now, the main concern is addDevice.
 
       applianceNameController.text = widget.deviceData!['applianceName'] as String;
-      kwhController.text = (widget.deviceData!['kwh'] ?? 0.0).toString();
+      wattageController.text = (widget.deviceData!['wattage'] ?? 0.0).toString();
       selectedRoom = widget.deviceData!['roomName'] as String?;
       deviceType = widget.deviceData!['deviceType'] as String? ?? 'Light';
       selectedRelay = widget.deviceData!['relay'] as String?;
       selectedIcon = IconData(widget.deviceData!['icon'] as int? ?? Icons.device_hub.codePoint, fontFamily: 'MaterialIcons');
 
-
       // Parse start and end times
-      final startTimeString = widget.deviceData!['startTime'] as String;
-      final endTimeString = widget.deviceData!['endTime'] as String;
-      final startTimeParts = startTimeString.split(':');
-      final endTimeParts = endTimeString.split(':');
-      startTime = TimeOfDay(hour: int.parse(startTimeParts[0]), minute: int.parse(startTimeParts[1]));
-      endTime = TimeOfDay(hour: int.parse(endTimeParts[0]), minute: int.parse(endTimeParts[1]));
+      final startTimeString = widget.deviceData!['startTime'] as String?;
+      final endTimeString = widget.deviceData!['endTime'] as String?;
+      if (startTimeString != null) {
+        try {
+          final startTimeParts = startTimeString.split(':');
+          startTime = TimeOfDay(hour: int.parse(startTimeParts[0]), minute: int.parse(startTimeParts[1]));
+        } catch (e) {
+          print("Error parsing start time: $e");
+        }
+      }
+      if (endTimeString != null) {
+        try {
+          final endTimeParts = endTimeString.split(':');
+          endTime = TimeOfDay(hour: int.parse(endTimeParts[0]), minute: int.parse(endTimeParts[1]));
+        } catch (e) {
+          print("Error parsing end time: $e");
+        }
+      }
 
       // Populate selected days
-      final daysList = List<String>.from(widget.deviceData!['days'] as List);
+      final daysList = List<String>.from(widget.deviceData!['days'] as List? ?? []);
       for (var day in selectedDays.keys) {
         selectedDays[day] = daysList.contains(day);
       }
     } else if (widget.initialRoomName != null) {
       // If not editing and initialRoomName is provided, set it
       selectedRoom = widget.initialRoomName;
-      // Optionally, update the roomController if you use it to display the room
-      // roomController.text = widget.initialRoomName!;
+    }
+
+    setState(() {
+      _isLoading = false;
+    });
+  }
+
+  Future<void> _fetchAndFilterRelays() async {
+    final userId = DatabaseService().getCurrentUserId();
+    if (userId == null) {
+      print("User not authenticated. Cannot fetch appliances.");
+      setState(() {
+        _availableRelays = [];
+      });
+      return;
+    }
+
+    try {
+      // Query the 'appliances' collection to find assigned relays
+      final appliancesSnapshot = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(userId)
+          .collection('appliances')
+          .get();
+
+      final occupiedRelays = <String>{};
+      for (final doc in appliancesSnapshot.docs) {
+        final data = doc.data();
+        final assignedRelay = data['relay'] as String?;
+        if (assignedRelay != null && assignedRelay.isNotEmpty) {
+           // A relay is considered "occupied" if it's assigned to an appliance,
+           // unless we are in edit mode and this is the relay currently assigned to the device being edited.
+           if (isEditing && selectedRelay != null && assignedRelay == selectedRelay) {
+               // If we are editing and this is the current device's relay, it's available
+               continue;
+           }
+           occupiedRelays.add(assignedRelay);
+        }
+      }
+
+      setState(() {
+        _availableRelays = _allRelays.where((relay) => !occupiedRelays.contains(relay)).toList();
+        // If in edit mode and the current relay is not in the available list, add it back.
+        if (isEditing && selectedRelay != null && !_availableRelays.contains(selectedRelay)) {
+           _availableRelays.add(selectedRelay!);
+           _availableRelays.sort(); // Keep the list sorted
+        }
+      });
+
+      print("Fetched and filtered relays based on appliances. Available: ${_availableRelays.length}");
+
+    } catch (e) {
+      print("Error fetching and filtering relays based on appliances: $e");
+      setState(() {
+        _availableRelays = [];
+      });
     }
   }
 
+
   @override
   Widget build(BuildContext context) {
+    // Show loading indicator while data is loading
+    if (_isLoading) {
+      return Scaffold(
+        backgroundColor: const Color(0xFFE9E7E6),
+        body: Center(child: CircularProgressIndicator()),
+      );
+    }
+
     return Scaffold(
       backgroundColor: const Color(0xFFE9E7E6), //frame
       appBar: null,
@@ -157,7 +246,7 @@ class _AddDeviceScreenState extends State<AddDeviceScreen> {
                       ),
                     ),
                   ),
-      
+
                   SizedBox(height: 5),
                   Transform.translate(  // icon profile
                     offset: Offset(0,-15),
@@ -176,31 +265,28 @@ class _AddDeviceScreenState extends State<AddDeviceScreen> {
                       ),
                     ),
                   ),
-                  
-                  // Required text 
+
+                  // Required text
                   _buildRequiredTextField(
-                    applianceNameController, 
-                    "Appliance Name", 
+                    applianceNameController,
+                    "Appliance Name",
                     Icons.device_hub,
                     errorText: applianceNameError
                   ),
                   _buildRequiredTextField(
-                    kwhController, 
-                    "kWh", 
-                    Icons.energy_savings_leaf, 
+                    wattageController,
+                    "Wattage",
+                    Icons.energy_savings_leaf,
                     keyboardType: TextInputType.number,
-                    errorText: kwhError
+                    errorText: wattageError
                   ),
-
                   SizedBox(height: 10),
-                  
+
                   // Required room
                   Row(
                     children: [
                       Expanded(
-                        child: _isLoadingRooms
-                          ? Center(child: CircularProgressIndicator())
-                          : DropdownButtonFormField<String>(
+                        child: DropdownButtonFormField<String>(
                               decoration: InputDecoration(
                                 filled: true,
                                 fillColor: Colors.white,
@@ -251,10 +337,10 @@ class _AddDeviceScreenState extends State<AddDeviceScreen> {
                       )
                     ],
                   ),
-                  
+
                   SizedBox(height: 15),
-                  
-                  // Device type dropdown 
+
+                  // Device type dropdown
                   DropdownButtonFormField<String>(
                     decoration: InputDecoration(
                       filled: true,
@@ -267,7 +353,7 @@ class _AddDeviceScreenState extends State<AddDeviceScreen> {
                       border: OutlineInputBorder(),
                       contentPadding: EdgeInsets.symmetric(horizontal: 15, vertical: 17),
                     ),
-                    dropdownColor: Colors.grey[200], 
+                    dropdownColor: Colors.grey[200],
                     style: GoogleFonts.jaldi(
                       textStyle: TextStyle(fontSize: 18, color: Colors.black87),
                     ),
@@ -281,15 +367,15 @@ class _AddDeviceScreenState extends State<AddDeviceScreen> {
                     onChanged: (value) {
                       setState(() {
                         deviceType = value!;
-                        
+
                         if (deviceType == 'Light') {
                           socketError = null;
                         }
                       });
                     },
                   ),
-                  
-                  
+
+
                   SizedBox(height: 15),
                   DropdownButtonFormField<String>(
                     decoration: InputDecoration(
@@ -301,7 +387,7 @@ class _AddDeviceScreenState extends State<AddDeviceScreen> {
                       border: OutlineInputBorder(),
                     ),
                     value: selectedRelay,
-                    items: relays.map((relay) {
+                    items: _availableRelays.map((relay) { // Use _availableRelays
                       return DropdownMenuItem(
                         value: relay,
                         child: Text(relay),
@@ -322,11 +408,11 @@ class _AddDeviceScreenState extends State<AddDeviceScreen> {
                   ),
 
                   SizedBox(height: 10),
-                  
-                  // Time selection 
+
+                  // Time selection
                   Container(
                     decoration: BoxDecoration(
-                      color: Colors.white, 
+                      color: Colors.white,
                       borderRadius: BorderRadius.circular(20),
                       border: Border.all(
                         color: timeError != null ? Colors.red : Colors.black
@@ -377,7 +463,7 @@ class _AddDeviceScreenState extends State<AddDeviceScreen> {
                     ),
                   ),
 // title
-                  Transform.translate( 
+                  Transform.translate(
                     offset: Offset(-90, 13),
                     child: Text(
                       ' Automatic alarm set',
@@ -388,9 +474,9 @@ class _AddDeviceScreenState extends State<AddDeviceScreen> {
                       ),
                     ),
                   ),
-                  
+
                   // automatic time buttons
-                  Transform.translate( 
+                  Transform.translate(
                     offset: Offset(-0, 10),
                     child: Padding(
                       padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 0),
@@ -411,7 +497,7 @@ class _AddDeviceScreenState extends State<AddDeviceScreen> {
                       ),
                     ),
                   ),
-                  
+
                   // Repeating days
                   Padding(
                     padding: const EdgeInsets.symmetric(vertical: 8.0),
@@ -423,14 +509,14 @@ class _AddDeviceScreenState extends State<AddDeviceScreen> {
                             Text(
                               'Repeating Days',
                               style: TextStyle(
-                                fontSize: 16, 
+                                fontSize: 16,
                                 fontWeight: FontWeight.bold
                               ),
                             ),
                             if (daysError != null)
                               Padding(
                                 padding: const EdgeInsets.only(left: 8.0),
-                                
+
                               ),
                           ],
                         ),
@@ -450,7 +536,7 @@ class _AddDeviceScreenState extends State<AddDeviceScreen> {
                                   onSelected: (selected) {
                                     setState(() {
                                       selectedDays[day] = selected;
-                                      
+
                                       if (selected) {
                                         daysError = null;
                                       }
@@ -458,7 +544,7 @@ class _AddDeviceScreenState extends State<AddDeviceScreen> {
                                   },
                                   backgroundColor: Colors.black,
                                   side: BorderSide(
-                                    color: daysError != null ? Colors.red : Colors.grey, 
+                                    color: daysError != null ? Colors.red : Colors.grey,
                                     width: 1
                                   ),
                                   selectedColor: Theme.of(context).colorScheme.secondary,
@@ -470,9 +556,9 @@ class _AddDeviceScreenState extends State<AddDeviceScreen> {
                       ],
                     ),
                   ),
-                  
+
                   SizedBox(height: 10),
-                  
+
                   // Submit and Delete buttons
                   Row(
                     children: [
@@ -535,12 +621,12 @@ class _AddDeviceScreenState extends State<AddDeviceScreen> {
     );
   }
 
-  // Required text field 
+  // Required text field
   Widget _buildRequiredTextField(
-    TextEditingController controller, 
-    String label, 
-    IconData icon, 
-    {TextInputType keyboardType = TextInputType.text, 
+    TextEditingController controller,
+    String label,
+    IconData icon,
+    {TextInputType keyboardType = TextInputType.text,
     String? hint,
     String? errorText}
   ) {
@@ -552,8 +638,8 @@ class _AddDeviceScreenState extends State<AddDeviceScreen> {
         decoration: InputDecoration(
           filled: true,
           fillColor: Colors.white,
-          prefixIcon: Icon(icon, size: 30, color: Colors.black), 
-          labelText: label,  
+          prefixIcon: Icon(icon, size: 30, color: Colors.black),
+          labelText: label,
           labelStyle: GoogleFonts.jaldi(
             textStyle: TextStyle(fontSize: 20),
             color: Colors.grey,
@@ -571,10 +657,10 @@ class _AddDeviceScreenState extends State<AddDeviceScreen> {
       ),
     );
   }
- 
+
   static IconData roomIconSelected = Icons.home;
 
-  void _addRoomDialog() {    
+  void _addRoomDialog() {
     TextEditingController roomInput = TextEditingController();
 
     showDialog(    // room content
@@ -597,7 +683,7 @@ class _AddDeviceScreenState extends State<AddDeviceScreen> {
                     controller: roomInput,
                     style: GoogleFonts.inter(
                       textStyle: TextStyle(fontSize: 17),
-                      color: Colors.black, 
+                      color: Colors.black,
                     ),
                     decoration: InputDecoration(
                       filled: true,
@@ -642,7 +728,7 @@ class _AddDeviceScreenState extends State<AddDeviceScreen> {
                       ].map((icon) {
                         return IconButton(
                           icon: Icon(
-                            icon, 
+                            icon,
                             color: roomIconSelected == icon ? Theme.of(context).colorScheme.secondary : Colors.black,
                           ),
                           onPressed: () {
@@ -659,14 +745,14 @@ class _AddDeviceScreenState extends State<AddDeviceScreen> {
             );
           }
         ),
-        
+
         actions: [
           TextButton(  // room add btn
             onPressed: () {
               if (roomInput.text.isNotEmpty) {
                 // Add room to Firestore
                 _addRoomToFirestore(roomInput.text, roomIconSelected);
-                
+
                 setState(() {
                   rooms.add(roomInput.text);
                   selectedRoom = roomInput.text;
@@ -723,12 +809,12 @@ class _AddDeviceScreenState extends State<AddDeviceScreen> {
       setState(() {
         startTime = presetTimes[preset]!['start'];
         endTime = presetTimes[preset]!['end'];
-      
+
         timeError = null;
       });
     }
   }
-  
+
   void _pickStartTime() async {
     final picked = await showTimePicker(
       context: context,
@@ -737,7 +823,7 @@ class _AddDeviceScreenState extends State<AddDeviceScreen> {
     if (picked != null) {
       setState(() {
         startTime = picked;
-   
+
         if (endTime != null) {
           timeError = null;
         }
@@ -753,14 +839,14 @@ class _AddDeviceScreenState extends State<AddDeviceScreen> {
     if (picked != null) {
       setState(() {
         endTime = picked;
-       
+
         if (startTime != null) {
           timeError = null;
         }
       });
     }
   }
-  
+
   void _validateAndSubmitDevice() {
     // Checking req field
     bool isValid = true;
@@ -776,14 +862,14 @@ class _AddDeviceScreenState extends State<AddDeviceScreen> {
       });
     }
 
-    if (kwhController.text.isEmpty) {
+    if (wattageController.text.isEmpty) {
       setState(() {
-        kwhError = "KWPH is required";
+        wattageError = "Wattage is required";
       });
       isValid = false;
     } else {
       setState(() {
-        kwhError = null;
+        wattageError = null;
       });
     }
 
@@ -809,12 +895,12 @@ class _AddDeviceScreenState extends State<AddDeviceScreen> {
       });
     }
 
-    
+
     setState(() {
       timeError = null;
     });
 
-    
+
     setState(() {
       daysError = null;
     });
@@ -831,11 +917,35 @@ class _AddDeviceScreenState extends State<AddDeviceScreen> {
 
   void _submitDevice() async { // Made async
     final DatabaseService dbService = DatabaseService();
+    final userId = FirebaseAuth.instance.currentUser?.uid;
+
+    if (userId == null) {
+      print("User not authenticated. Cannot add device.");
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text("User not authenticated. Cannot add device."))
+        );
+      }
+      return;
+    }
+
+    // Fetch presentYear from the user document
+    String presentYear = DateTime.now().year.toString(); // Default to current year
+    try {
+      final userDoc = await FirebaseFirestore.instance.collection('users').doc(userId).get();
+      if (userDoc.exists) {
+        presentYear = (userDoc.data()?['presentYear'] as String?) ?? presentYear;
+      }
+    } catch (e) {
+      print("Error fetching presentYear: $e");
+    }
+
+
     // all data
     final Map<String, dynamic> deviceData = {
       "applianceName": applianceNameController.text,
       "deviceType": deviceType,
-      "kwh": double.tryParse(kwhController.text) ?? 0.0,
+      "wattage": double.tryParse(wattageController.text) ?? 0.0,
       "roomName": selectedRoom!, // selectedRoom is validated to not be null
       "icon": selectedIcon.codePoint,
       "startTime": startTime != null ? "${startTime!.hour.toString().padLeft(2, '0')}:${startTime!.minute.toString().padLeft(2, '0')}" : null,
@@ -846,14 +956,96 @@ class _AddDeviceScreenState extends State<AddDeviceScreen> {
           .toList(),
       "relay": selectedRelay, // Always include relay for all device types
       "applianceStatus": 'OFF', // Default status for new device as STRING
-      "presentHourlyusage": 0.0, // Default value, adjust if needed
     };
 
     print("Attempting to add appliance: $deviceData");
 
     try {
-      await dbService.addAppliance(applianceData: deviceData);
-      print("Device successfully added to Firestore via DatabaseService.");
+      // Add the appliance document and get its reference
+      final DocumentReference applianceRef = await dbService.addAppliance(applianceData: deviceData);
+      print("Device successfully added to Firestore via DatabaseService with ID: ${applianceRef.id}");
+
+      // Update the relay_states document for the selected relay
+      if (selectedRelay != null) {
+        try {
+          // We no longer set the 'assigned' field. Just ensure the relay_states document exists.
+          await FirebaseFirestore.instance
+              .collection('users')
+              .doc(userId)
+              .collection('relay_states')
+              .doc(selectedRelay)
+              .set({}, SetOptions(merge: true)); // Create or merge with empty data
+          print("Ensured relay_states document exists for $selectedRelay.");
+        } catch (e) {
+          print("Error ensuring relay_states document for $selectedRelay: $e");
+        }
+      }
+
+      // Initialize the yearly_usage document using presentYear
+      final yearlyUsageRef = applianceRef.collection('yearly_usage').doc(presentYear);
+      await yearlyUsageRef.set({
+        'kwh': 0.0,
+        'kwhrcost': 0.0,
+      });
+      print("Initialized yearly_usage for appliance ${applianceRef.id} with document for year $presentYear");
+
+      // Initialize monthly_usage collection and nested structures
+      final List<String> months = [
+        'jan_usage', 'feb_usage', 'mar_usage', 'apr_usage', 'may_usage', 'jun_usage',
+        'jul_usage', 'aug_usage', 'sep_usage', 'oct_usage', 'nov_usage', 'dec_usage'
+      ];
+
+      for (String month in months) {
+        final monthlyUsageRef = yearlyUsageRef.collection('monthly_usage').doc(month);
+        await monthlyUsageRef.set({
+          'kwh': 0.0,
+          'kwhrcost': 0.0,
+        });
+
+        // Calculate the number of days in the current month, considering leap years for February
+        final now = DateTime.now();
+        final currentYearInt = int.tryParse(presentYear) ?? now.year; // Use presentYear for leap year check
+        final monthIndex = months.indexOf(month);
+        int numberOfDays;
+
+        if (month == 'feb_usage') {
+          numberOfDays = isLeapYear(currentYearInt) ? 29 : 28;
+        } else if (month == 'apr_usage' || month == 'jun_usage' || month == 'sep_usage' || month == 'nov_usage') {
+          numberOfDays = 30;
+        } else {
+          numberOfDays = 31;
+        }
+
+        // Initialize week_usage collection and nested structures based on actual dates
+        int currentDay = 1;
+        int weekCounter = 1;
+        while (currentDay <= numberOfDays) {
+        final weeklyUsageRef = monthlyUsageRef.collection('week_usage').doc('week${weekCounter}_usage');
+          await weeklyUsageRef.set({
+          'kwh': 0.0,
+          'kwhrcost': 0.0,
+        });
+
+        // Initialize day_usage collection with exact dates
+        for (int day = 0; day < 7 && currentDay <= numberOfDays; day++) {
+            final currentDate = DateTime(currentYearInt, monthIndex + 1, currentDay); // Use currentYearInt
+            final formattedDate = DateFormat('yyyy-MM-dd').format(currentDate);
+            final dailyUsageRef = weeklyUsageRef.collection('day_usage').doc(formattedDate);
+            await dailyUsageRef.set({
+              'kwh': 0.0,
+              'kwhrcost': 0.0,
+              'usagetimeon': [],
+              'usagetimeoff': [],
+            });
+            currentDay++;
+          }
+          weekCounter++;
+        }
+      }
+
+      print("Initialized monthly, weekly, and daily usage structures with exact dates for appliance ${applianceRef.id}");
+
+
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text("${deviceData['applianceName']} added successfully!"))
@@ -888,7 +1080,7 @@ class _AddDeviceScreenState extends State<AddDeviceScreen> {
     final Map<String, dynamic> updatedData = {
       "applianceName": applianceNameController.text,
       "deviceType": deviceType,
-      "kwh": double.tryParse(kwhController.text) ?? 0.0,
+      "wattage": double.tryParse(wattageController.text) ?? 0.0,
       "roomName": selectedRoom!,
       "icon": selectedIcon.codePoint,
       "startTime": startTime != null ? "${startTime!.hour.toString().padLeft(2, '0')}:${startTime!.minute.toString().padLeft(2, '0')}" : null,
@@ -944,7 +1136,7 @@ class _AddDeviceScreenState extends State<AddDeviceScreen> {
       builder: (BuildContext context) {
         return AlertDialog(
           title: Text('Confirm Delete'),
-          content: Text('Are you sure you want to delete "$applianceNameToDelete"?'),
+          content: Text('Are you sure you want to delete "$applianceNameToDelete"? This will erase all associated usage data.'),
           actions: <Widget>[
             TextButton(
               child: Text('Cancel'),
@@ -965,6 +1157,24 @@ class _AddDeviceScreenState extends State<AddDeviceScreen> {
 
     if (confirmDelete == true) {
       try {
+        // Delete yearly_usage subcollection
+        final userId = FirebaseAuth.instance.currentUser?.uid;
+        if (userId != null) {
+          final yearlyUsageSnapshot = await FirebaseFirestore.instance
+              .collection('users')
+              .doc(userId)
+              .collection('appliances')
+              .doc(applianceId)
+              .collection('yearly_usage')
+              .get();
+
+          for (final doc in yearlyUsageSnapshot.docs) {
+            await doc.reference.delete();
+          }
+           print("Deleted yearly_usage subcollection for appliance $applianceId.");
+        }
+
+
         await dbService.deleteAppliance(applianceId: applianceId);
         print("Device $applianceId successfully deleted via DatabaseService.");
         if (mounted) {
@@ -983,13 +1193,10 @@ class _AddDeviceScreenState extends State<AddDeviceScreen> {
       }
     }
   }
-  
-  // Fetch rooms from Firestore
-  void _fetchRoomsFromFirestore() async {
-    setState(() {
-      _isLoadingRooms = true;
-    });
 
+  // Fetch rooms from Firestore
+  Future<void> _fetchRoomsFromFirestore() async {
+    // Removed setState(_isLoadingRooms = true) as it's handled by _fetchInitialData
     try {
       final userId = DatabaseService().getCurrentUserId();
       if (userId == null) {
@@ -997,7 +1204,7 @@ class _AddDeviceScreenState extends State<AddDeviceScreen> {
         setState(() {
           rooms = [];
           roomIcons = {};
-          _isLoadingRooms = false;
+          // Removed _isLoadingRooms = false
         });
         return;
       }
@@ -1027,7 +1234,7 @@ class _AddDeviceScreenState extends State<AddDeviceScreen> {
       setState(() {
         rooms = fetchedRooms;
         roomIcons = fetchedIcons;
-        _isLoadingRooms = false;
+        // Removed _isLoadingRooms = false
 
         // If initialRoomName is provided, select it
         if (widget.initialRoomName != null && rooms.contains(widget.initialRoomName)) {
@@ -1045,7 +1252,7 @@ class _AddDeviceScreenState extends State<AddDeviceScreen> {
       setState(() {
         rooms = [];
         roomIcons = {};
-        _isLoadingRooms = false;
+        // Removed _isLoadingRooms = false
       });
     }
   }
