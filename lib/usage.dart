@@ -310,10 +310,13 @@ class UsageService {
     QuerySnapshot dailyDocsSnap = await _firestore.collection(dailyDocsCollectionPath).get();
 
     double totalKwh = 0;
+    double totalKwhCost = 0; // Initialize sum for kwhrcost
     for (var doc in dailyDocsSnap.docs) {
-      totalKwh += ((doc.data() as Map<String, dynamic>)['kwh'] as num?)?.toDouble() ?? 0.0;
+      final data = doc.data() as Map<String, dynamic>;
+      totalKwh += (data['kwh'] as num?)?.toDouble() ?? 0.0;
+      totalKwhCost += (data['kwhrcost'] as num?)?.toDouble() ?? 0.0; // Sum kwhrcost
     }
-    double totalKwhCost = totalKwh * kwhrRate;
+    // kwhrRate is no longer used to recalculate totalKwhCost here
 
     await _firestore.doc(weeklyPath).set({
       'kwh': totalKwh, 'kwhrcost': totalKwhCost, 'last_updated': FieldValue.serverTimestamp(),
@@ -330,10 +333,13 @@ class UsageService {
     QuerySnapshot weeklyDocsSnap = await _firestore.collection(weeklyDocsCollectionPath).get();
     
     double totalKwh = 0;
+    double totalKwhCost = 0; // Initialize sum for kwhrcost
     for (var doc in weeklyDocsSnap.docs) {
-       totalKwh += ((doc.data() as Map<String, dynamic>)['kwh'] as num?)?.toDouble() ?? 0.0;
+       final data = doc.data() as Map<String, dynamic>;
+       totalKwh += (data['kwh'] as num?)?.toDouble() ?? 0.0;
+       totalKwhCost += (data['kwhrcost'] as num?)?.toDouble() ?? 0.0; // Sum kwhrcost
     }
-    double totalKwhCost = totalKwh * kwhrRate;
+    // kwhrRate is no longer used to recalculate totalKwhCost here
 
     await _firestore.doc(monthlyPath).set({
       'kwh': totalKwh, 'kwhrcost': totalKwhCost, 'last_updated': FieldValue.serverTimestamp(),
@@ -349,10 +355,13 @@ class UsageService {
     QuerySnapshot monthlyDocsSnap = await _firestore.collection(monthlyDocsCollectionPath).get();
 
     double totalKwh = 0;
+    double totalKwhCost = 0; // Initialize sum for kwhrcost
     for (var doc in monthlyDocsSnap.docs) {
-       totalKwh += ((doc.data() as Map<String, dynamic>)['kwh'] as num?)?.toDouble() ?? 0.0;
+       final data = doc.data() as Map<String, dynamic>;
+       totalKwh += (data['kwh'] as num?)?.toDouble() ?? 0.0;
+       totalKwhCost += (data['kwhrcost'] as num?)?.toDouble() ?? 0.0; // Sum kwhrcost
     }
-    double totalKwhCost = totalKwh * kwhrRate;
+    // kwhrRate is no longer used to recalculate totalKwhCost here
 
     await _firestore.doc(yearlyPath).set({
       'kwh': totalKwh, 'kwhrcost': totalKwhCost, 'last_updated': FieldValue.serverTimestamp(),
@@ -415,6 +424,7 @@ class UsageService {
   }) async {
     QuerySnapshot appliancesSnap = await _firestore.collection('users').doc(userId).collection('appliances').get();
     double totalKwhForAllAppliances = 0;
+    double totalKwhCostForAllAppliances = 0; // Initialize sum for kwhrcost
 
     for (var applianceDoc in appliancesSnap.docs) {
       String applianceId = applianceDoc.id;
@@ -440,14 +450,16 @@ class UsageService {
 
       DocumentSnapshot appliancePeriodDoc = await _firestore.doc(applianceDetailedPeriodPath).get();
       if (appliancePeriodDoc.exists && appliancePeriodDoc.data() != null) {
-        totalKwhForAllAppliances += ((appliancePeriodDoc.data() as Map<String, dynamic>)['kwh'] as num?)?.toDouble() ?? 0.0;
+        final data = appliancePeriodDoc.data() as Map<String, dynamic>;
+        totalKwhForAllAppliances += (data['kwh'] as num?)?.toDouble() ?? 0.0;
+        totalKwhCostForAllAppliances += (data['kwhrcost'] as num?)?.toDouble() ?? 0.0; // Sum kwhrcost
       }
     }
+    // kwhrRate is no longer used to recalculate totalKwhCostForAllAppliances here
 
-    double totalKwhCostForAllAppliances = totalKwhForAllAppliances * kwhrRate;
     Map<String, dynamic> dataToWrite = {
       'totalKwh': totalKwhForAllAppliances,
-      'totalKwhrCost': totalKwhCostForAllAppliances,
+      'totalKwhrCost': totalKwhCostForAllAppliances, // Use the summed cost
       'last_updated': FieldValue.serverTimestamp(),
     };
 

@@ -5,9 +5,9 @@ import 'package:homesync/usage.dart'; // Now imports UsageService
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'dart:async';
 import 'package:homesync/databaseservice.dart'; // Import DatabaseService
-import 'package:homesync/electricity_usage_chart.dart'; // Import ElectricityUsageChart
+// Import ElectricityUsageChart
 import 'package:firebase_auth/firebase_auth.dart'; // Import FirebaseAuth
-import 'package:homesync/detailed_usage.dart'; // Import DetailedUsageScreen
+// Import DetailedUsageScreen
 import 'package:intl/intl.dart'; // Import for date formatting
 
 // Adding a comment to trigger re-analysis
@@ -952,9 +952,22 @@ class DeviceInfoScreenState extends State<DeviceInfoScreen> {
                     Navigator.push(
   context,
   MaterialPageRoute(
-    builder: (context) => DeviceUsage(
-      
-    ),
+    builder: (context) {
+      final userId = _auth.currentUser?.uid;
+      if (userId == null) {
+        // Handle the case where the user is not logged in,
+        // though this is unlikely if they are on this screen.
+        // You could return a placeholder widget or show an error.
+        return Scaffold(
+          appBar: AppBar(title: Text("Error")),
+          body: Center(child: Text("User not logged in.")),
+        );
+      }
+      return DeviceUsage(
+        userId: userId,
+        applianceId: widget.applianceId,
+      );
+    },
   ),
 );
                   },
@@ -1452,7 +1465,7 @@ class DeviceInfoScreenState extends State<DeviceInfoScreen> {
 
       if (mounted) { // Check mounted before showing SnackBar
          ScaffoldMessenger.of(context).showSnackBar(
-           SnackBar(content: Text('${_currentDeviceName} usage data refreshed!')),
+           SnackBar(content: Text('$_currentDeviceName usage data refreshed!')),
          );
       }
     } catch (e, s) {
