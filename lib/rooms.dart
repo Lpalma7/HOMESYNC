@@ -8,6 +8,10 @@ import 'package:homesync/room_data_manager.dart';
 import 'package:cloud_firestore/cloud_firestore.dart'; // Import Firestore
 import 'package:firebase_auth/firebase_auth.dart'; // Import FirebaseAuth
 
+// TODO: Replace 'YOUR_API_KEY' with your actual OpenWeatherMap API key
+const String _apiKey = 'YOUR_API_KEY'; // Placeholder for Weather API Key
+const String _cityName = 'Manila'; // Default city for weather
+
 class Rooms extends StatefulWidget {
   const Rooms({super.key});
 
@@ -16,9 +20,64 @@ class Rooms extends StatefulWidget {
 }
 
 class RoomsState extends State<Rooms> {
-  Weather? currentWeather;
+  Weather? _currentWeather; // Updated weather state variable
   int _selectedIndex = 2;
   final RoomDataManager _roomDataManager = RoomDataManager(); // Initial manager
+
+  // Method to get username from Firestore
+  Future<String> getCurrentUsername() async {
+    try {
+      final user = FirebaseAuth.instance.currentUser;
+      if (user != null) {
+        DocumentSnapshot userDoc = await FirebaseFirestore.instance
+            .collection('users')
+            .doc(user.uid)
+            .get();
+        
+        if (userDoc.exists) {
+          Map<String, dynamic> userData = userDoc.data() as Map<String, dynamic>;
+          return userData['username'] ?? ' ';
+        }
+      }
+      return ' ';
+    } catch (e) {
+      print('Error fetching username: $e');
+      return ' ';
+    }
+  }
+
+  // Added weather fetching method
+  Future<void> _fetchWeather() async {
+    if (_apiKey == 'YOUR_API_KEY') {
+      print("Weather API key is a placeholder. Please replace it.");
+      if (mounted) {
+        setState(() {
+          // Keep _currentWeather as null to show placeholder
+        });
+      }
+      return;
+    }
+    WeatherFactory wf = WeatherFactory(_apiKey);
+    try {
+      Weather w = await wf.currentWeatherByCityName(_cityName);
+      if (mounted) {
+        setState(() {
+          _currentWeather = w;
+        });
+      }
+    } catch (e) {
+      print("Failed to fetch weather: $e");
+      if (mounted) {
+        // Handle weather fetch error, e.g., show a default or error message
+      }
+    }
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchWeather(); // Fetch weather data
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -37,87 +96,118 @@ class RoomsState extends State<Rooms> {
           padding: const EdgeInsets.all(16.0),
           child: Column(
             children: [
-              /// Profile + Home Text + Flyout
-              GestureDetector(
-                onTap: () => _showFlyout(context),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.center,
-                  children: [
-                    const Padding(
-                      padding: EdgeInsets.only(top: 20),
-                      child: CircleAvatar(
-                        backgroundColor: Colors.grey,
-                        radius: 25,
-                        child: Icon(Icons.home, color: Colors.black, size: 35),
-                      ),
-                    ),
-                    const SizedBox(width: 10),
-                    const Padding(
-                      padding: EdgeInsets.only(top: 20),
-                      child: Text(
-                        'My Home',
-                        style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-
-              /// Weather Info
-              Transform.translate(
-                offset: const Offset(195, -50),
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                  decoration: BoxDecoration(
-                    color: Colors.transparent,
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                  child: Row(
-                    children: [
-                      const Icon(Icons.cloud_circle_sharp, size: 35, color: Colors.lightBlue),
-                      const SizedBox(width: 4),
-                      Text(
-                        '27°C',
-                        style: GoogleFonts.inter(fontSize: 16),
-                      ),
-                      Transform.translate(
-                        offset: const Offset(-45, 16),
-                        child: Text(
-                          "Today's Weather",
-                          style: GoogleFonts.inter(color: Colors.grey, fontSize: 11),
+              // Updated header section to match homepage design
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  GestureDetector(
+                    onTap: () => _showFlyout(context),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      children: [
+                        Transform.translate(
+                          offset: Offset(0, 20),
+                          child: CircleAvatar(
+                            backgroundColor: Colors.grey,
+                            radius: 25,
+                            child: Icon(Icons.home, color: Colors.black, size: 35),
+                          ),
                         ),
+                        SizedBox(width: 10),
+                        Transform.translate(
+                          offset: Offset(0, 20),
+                          child: SizedBox(
+                            width: 110,
+                            child: FutureBuilder<String>(
+                              future: getCurrentUsername(),
+                              builder: (context, snapshot) {
+                                return Text(
+                                  snapshot.data ?? "My Home",
+                                  style: TextStyle(
+                                    fontSize: 20,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                );
+                              },
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+
+                  // Updated weather section to match homepage
+                  Transform.translate(
+                    offset: Offset(0, 20),
+                    child: Container(
+                      padding: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: Colors.transparent,
+                        borderRadius: BorderRadius.circular(20),
                       ),
-                    ],
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Icon(Icons.cloud_circle_sharp, size: 35, color: Colors.lightBlue),
+                              SizedBox(width: 4),
+                              Transform.translate(
+                                offset: Offset(0, -5),
+                                child: _currentWeather == null
+                                    ? (_apiKey == 'YOUR_API_KEY'
+                                        ? Text('Set API Key', style: GoogleFonts.inter(fontSize: 12))
+                                        : Text('Loading...', style: GoogleFonts.inter(fontSize: 12)))
+                                    : Text(
+                                        '${_currentWeather?.temperature?.celsius?.toStringAsFixed(0) ?? '--'}°C',
+                                        style: GoogleFonts.inter(fontSize: 16),
+                                      ),
+                              ),
+                            ],
+                          ),
+                          Transform.translate(
+                            offset: Offset(40, -15),
+                            child: Text(
+                              _currentWeather?.weatherDescription ?? (_apiKey == 'YOUR_API_KEY' ? 'Weather' : 'Fetching weather...'),
+                              style: GoogleFonts.inter(
+                                color: Colors.grey,
+                                fontSize: 12,
+                              ),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
                   ),
+                ],
+              ),
+
+              SizedBox(height: 20),
+
+              // Navigation Tabs
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                children: [
+                  _buildNavButton('Electricity', _selectedIndex == 0, 0),
+                  _buildNavButton('Appliance', _selectedIndex == 1, 1),
+                  _buildNavButton('Rooms', _selectedIndex == 2, 2),
+                ],
+              ),
+
+              SizedBox(
+                width: double.infinity,
+                child: Divider(
+                  height: 1,
+                  thickness: 1,
+                  color: Colors.black38,
                 ),
               ),
 
-              /// Navigation Tabs
-              Transform.translate(
-                offset: const Offset(-5, -20),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                  children: [
-                    _buildNavButton('Electricity', _selectedIndex == 0, 0),
-                    _buildNavButton('Appliance', _selectedIndex == 1, 1),
-                    _buildNavButton('Rooms', _selectedIndex == 2, 2),
-                  ],
-                ),
-              ),
-
-              Transform.translate(
-                offset: const Offset(-1, -20),
-                child: const SizedBox(
-                  width: 1000,
-                  child: Divider(
-                    height: 1,
-                    thickness: 1,
-                    color: Colors.black38,
-                  ),
-                ),
-              ),
-
-              const SizedBox(height: 1), // search bar
+              const SizedBox(height: 20), // search bar
               SizedBox(
                 width: 355,
                 height: 47,
@@ -494,14 +584,24 @@ class RoomsState extends State<Rooms> {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            const Text(
-                              "My Home",
-                              style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold),
-                              overflow: TextOverflow.ellipsis, 
-                              maxLines: 1, 
+                            // Updated to use FutureBuilder for username
+                            FutureBuilder<String>(
+                              future: getCurrentUsername(),
+                              builder: (context, snapshot) {
+                                return Text(
+                                  snapshot.data ?? "User", // Display username or "User" as fallback
+                                  style: TextStyle(
+                                    color: Colors.white, 
+                                    fontSize: 20, 
+                                    fontWeight: FontWeight.bold
+                                  ),
+                                  overflow: TextOverflow.ellipsis,
+                                  maxLines: 1,
+                                );
+                              },
                             ),
                             Text(
-                              "emailExample@gmail.com",
+                              FirebaseAuth.instance.currentUser?.email ?? "email@example.com", // Display actual user email
                               style: GoogleFonts.inter(color: Colors.white70, fontSize: 14),
                               overflow: TextOverflow.ellipsis, 
                               maxLines: 1, 
@@ -542,10 +642,11 @@ class RoomsState extends State<Rooms> {
                       child: Icon(Icons.logout, color: Colors.white, size: 35),
                     ),
                     title: Text('Logout', style: GoogleFonts.inter(color: Colors.white)),
-                     onTap: () {
-                      Navigator.push(
-                        context,
+                     onTap: () async {
+                      await FirebaseAuth.instance.signOut(); // Actually sign out
+                      Navigator.of(context).pushAndRemoveUntil(
                         MaterialPageRoute(builder: (context) => WelcomeScreen()),
+                        (Route<dynamic> route) => false,
                       );
                     },
                   ),

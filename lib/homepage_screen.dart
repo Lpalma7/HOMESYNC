@@ -39,6 +39,28 @@ class _HomeScreenState extends State<HomepageScreen> {
   List<QueryDocumentSnapshot<Map<String, dynamic>>> _appliances = []; // List to hold appliance data
   final UsageService _usageService = UsageService(); // Instantiate UsageService
 
+  // Method to get username from Firestore
+  Future<String> getCurrentUsername() async {
+    try {
+      final user = FirebaseAuth.instance.currentUser;
+      if (user != null) {
+        DocumentSnapshot userDoc = await FirebaseFirestore.instance
+            .collection('users')
+            .doc(user.uid)
+            .get();
+        
+        if (userDoc.exists) {
+          Map<String, dynamic> userData = userDoc.data() as Map<String, dynamic>;
+          return userData['username'] ?? ' ';
+        }
+      }
+      return ' ';
+    } catch (e) {
+      print('Error fetching username: $e');
+      return ' ';
+    }
+  }
+
   // State for selected appliance REMOVED
   // String? _selectedApplianceId;
   // String _selectedApplianceName = "";
@@ -318,7 +340,9 @@ class _HomeScreenState extends State<HomepageScreen> {
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
-              Row(
+
+
+             Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -327,58 +351,93 @@ class _HomeScreenState extends State<HomepageScreen> {
                     child: Row(
                       crossAxisAlignment: CrossAxisAlignment.center,
                       children: [
-                        CircleAvatar(
+                        Transform.translate(
+                      offset: Offset(0, 20),
+                       child:  CircleAvatar(
                           backgroundColor: Colors.grey,
                           radius: 25,
                           child: Icon(Icons.home, color: Colors.black, size: 35),
                         ),
-                        SizedBox(width: 10,),
-                        Text(
-                          'My Home',
-                          style: TextStyle(
-                            fontSize: 20,
-                            fontWeight: FontWeight.bold,
-                          ),
                         ),
+                        SizedBox(width: 10,),
+                        // UPDATED to show username instead of hardcoded 'My Home'
+                        
+                        Transform.translate(
+                      offset: Offset(0, 20),
+                       child: SizedBox(
+                        width: 110,
+                        child:FutureBuilder<String>( 
+                          future: getCurrentUsername(),
+                          builder: (context, snapshot) {
+                            return Text(
+                              snapshot.data ?? " ", // Display username or "My Home" as fallback
+                              style: TextStyle(
+                                fontSize: 20,
+                                fontWeight: FontWeight.bold,
+                              ),
+                               maxLines: 1, // Prevents overflow to multiple lines
+                              overflow: TextOverflow.ellipsis,
+                            
+                            );
+                        
+                        
+                          },
+                        ),
+                        ),
+                        ),
+                    
                       ],
                     ),
                   ),
+             
 
 /////////////////////////////////////////////////////////////////////////////////////////////////////////
-                  Container(  // weather
+                 Transform.translate(
+                      offset: Offset(0, 20),
+                 
+                 child: Container(  // weather
                     padding: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                     decoration: BoxDecoration(
                       color: Colors.transparent,
                       borderRadius: BorderRadius.circular(20),
                     ),
+                 
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Row(
                           children: [
                             Icon(Icons.cloud_circle_sharp, size: 35, color: Colors.lightBlue),
+                            
                             SizedBox(width: 4),
-                            _currentWeather == null
+                            Transform.translate(
+                      offset: Offset(0, -5),
+                           child:  _currentWeather == null
                                 ? (_apiKey == 'YOUR_API_KEY'
                                     ? Text('Set API Key', style: GoogleFonts.inter(fontSize: 12))
                                     : Text('Loading...', style: GoogleFonts.inter(fontSize: 12)))
-                                : Text(
+                                :Text(
                                     '${_currentWeather?.temperature?.celsius?.toStringAsFixed(0) ?? '--'}°C',
                                     style: GoogleFonts.inter(fontSize: 16),
                                   ),
+                            ),
                           ],
                         ),
-                        Text(
+                        Transform.translate(
+                      offset: Offset(40, -15),
+                        child:Text( 
                           _currentWeather?.weatherDescription ?? (_apiKey == 'YOUR_API_KEY' ? 'Weather' : 'Fetching weather...'),
                           style: GoogleFonts.inter(
                             color: Colors.grey,
-                            fontSize: 11,
+                            fontSize: 12,
                           ),
                           overflow: TextOverflow.ellipsis,
+                        ),
                         ),
                       ],
                     ),
                   ),
+                 ),
                 ],
               ),
 //////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -405,60 +464,60 @@ class _HomeScreenState extends State<HomepageScreen> {
               ),
           
  //////////////////////////////////////////////////////////////////////////////////////////////////////////////////           
-            
-              // date and usage display
-              Padding( // Added Padding to replace Transform.translate
-                padding: EdgeInsets.only(top: 10), // Adjust padding as needed
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Text('Usage',
-                            style: TextStyle(
-                                fontSize: 18, fontWeight: FontWeight.bold)),
-                        
-                        Row(
-                          children: [
-                            _isRefreshing 
-                              ? SizedBox(width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 2,))
-                              : IconButton(
-                                  icon: Icon(Icons.refresh),
-                                  onPressed: _handleRefresh,
-                                ),
-                            SizedBox(width: 8), // Spacing between refresh and period
-                            Text(_selectedPeriod), // Use _selectedPeriod
-                            IconButton(
-                              icon: Icon(Icons.calendar_month),
-                              onPressed: () => _showPeriodPicker(),
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-
-//////////////////////////////////////////////////////////////////////////////////////////////////////           
              
             Expanded( // Usage Graph
   child: SingleChildScrollView(
     child: Column(
       children: [
-        Container( // Removed Transform.translate
+        // UPDATED: Moved Usage section inside the scrollable area
+        Padding(
+          padding: EdgeInsets.only(top: 10, bottom: 16),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              // Usage text with refresh button beside it
+              Row(
+                children: [
+                  Text('Usage',
+                      style: TextStyle(
+                          fontSize: 20, fontWeight: FontWeight.bold)),
+                  SizedBox(width: 8),
+                  _isRefreshing 
+                    ? SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2,))
+                    : GestureDetector(
+                        onTap: _handleRefresh,
+                        child: Icon(Icons.refresh, color: Colors.black, size: 20),
+                      ),
+                ],
+              ),
+              
+              // Period selector on the right side
+              Row(
+                children: [
+                  Text(_selectedPeriod),
+                  IconButton(
+                    icon: Icon(Icons.calendar_month),
+                    onPressed: () => _showPeriodPicker(),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+        Transform.translate(
+                          offset: Offset(0, -10),
+       child: Container( // Removed Transform.translate
             height: 300,
             width: double.infinity, // Make the graph take full width
             padding: const EdgeInsets.all(8),
             decoration: BoxDecoration(
               color: Colors.grey[350],  
               
-              
+            
             ),
             child: ElectricityUsageChart(selectedPeriod: _selectedPeriod), // Pass selectedPeriod
           ),
-    
+        ),
         _buildUsageStat(  // usage status
           'Total Electricity Usage',
           '${_totalUsageKwh.toStringAsFixed(3)} kWh', // Display calculated usage with more precision
@@ -466,8 +525,8 @@ class _HomeScreenState extends State<HomepageScreen> {
         ),
         _buildUsageStat(      // cost usage
           'Total Estimated Cost',
-          '₱ ${_totalElectricityCost.toStringAsFixed(2)}', // Display calculated cost
-          Icons.php_rounded, 
+          '₱${_totalElectricityCost.toStringAsFixed(2)}', // Display calculated cost
+          Icons.attach_money,
         ),
 
         // Conditionally display selected appliance stats REMOVED
@@ -525,18 +584,24 @@ void _showFlyout(BuildContext context) { //flyout na nakaka baliw ayusin
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text(
-                            "My Home",
-                            style: TextStyle(
-                              color: Colors.white,
-                              fontSize: 20,
-                              fontWeight: FontWeight.bold,
-                            ),
-                            overflow: TextOverflow.ellipsis, 
-                            maxLines: 1, 
+                          // UPDATED to use FutureBuilder for username
+                          FutureBuilder<String>(
+                            future: getCurrentUsername(),
+                            builder: (context, snapshot) {
+                              return Text(
+                                snapshot.data ?? "User", // Display username or "User" as fallback
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 20,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                                overflow: TextOverflow.ellipsis,
+                                maxLines: 1,
+                              );
+                            },
                           ),
                           Text(
-                            _auth.currentUser?.email ?? "No email",
+                            _auth.currentUser?.email ?? "No email", // Display actual user email
                             style: GoogleFonts.inter(
                               color: Colors.white70,
                               fontSize: 14,
@@ -583,12 +648,13 @@ void _showFlyout(BuildContext context) { //flyout na nakaka baliw ayusin
                 child: Icon(Icons.logout, color: Colors.white, size: 35,),
               ),
                 title: Text('Logout', style: GoogleFonts.inter(color: Colors.white)),
-               onTap: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (context) => WelcomeScreen()),
-              );
-            },
+               onTap: () async {
+                await _auth.signOut(); // Actually sign out
+                Navigator.of(context).pushAndRemoveUntil(
+                  MaterialPageRoute(builder: (context) => WelcomeScreen()),
+                  (Route<dynamic> route) => false,
+                );
+              },
               ),  
               ],
             ),
@@ -647,15 +713,15 @@ Widget _buildNavButton(String title, bool isSelected, int index) { // nav bar fu
  /////////////////////////////////////////////////////////////////////////////////////////////////////////////// 
   
  Widget _buildUsageStat(String title, String value, IconData icon) { // usage and cost 
-  return Padding( // Replaced Transform.translate with Padding
-    padding: EdgeInsets.symmetric(vertical: 10,horizontal: 10),
+  return Transform.translate(
+  offset: Offset(-0, 10),
     child: Row(
       children: [
-        Icon(icon, size: 30,),
-        SizedBox(width: 8,),
+        Icon(icon),
+        SizedBox(width: 5,height: 40,),
         Text(title, style: GoogleFonts.judson(color: Colors.black,fontSize: 16)),
         Spacer(),
-        Text(value, style: TextStyle(color: Colors.black,fontWeight: FontWeight.bold,fontSize: 15)),
+        Text(value, style: TextStyle(color: Colors.black,fontWeight: FontWeight.bold,fontSize: 17)),
       ],
     ),
   );
@@ -663,13 +729,16 @@ Widget _buildNavButton(String title, bool isSelected, int index) { // nav bar fu
 //////////////////////////////////////////////////////////////////////////////////////////////////
 
   Widget _buildDevicesList() { // devices
-    return Column(
+    return 
+    Transform.translate(
+  offset: Offset(-0, 15),
+    child: Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Padding(
           padding: EdgeInsets.symmetric(vertical: 16),
           child: Text('Appliance',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+              style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)), // UPDATED: Increased font size from 18 to 20
         ),
         _appliances.isEmpty
             ? Center(child: Text("No appliances found."))
@@ -687,10 +756,22 @@ Widget _buildNavButton(String title, bool isSelected, int index) { // nav bar fu
                   final int iconCodePoint = (applianceData['icon'] is int) ? (applianceData['icon'] as int) : Icons.devices.codePoint;
                   final IconData icon = IconData(iconCodePoint, fontFamily: 'MaterialIcons');
 
-                  return _buildDeviceItem(applianceId, applianceName, '', icon); // Pass empty string for usage for now
+                  return Column( // UPDATED: Wrapped in Column to add divider
+                    children: [
+                      _buildDeviceItem(applianceId, applianceName, '', icon), // Pass empty string for usage for now
+                      if (index < _appliances.length - 1) // UPDATED: Add divider between items (except after last item)
+                        Divider(
+                          color: Colors.grey[400],
+                          thickness: 0.5,
+                          indent: 50, // Indent to align with text content
+                          endIndent: 16,
+                        ),
+                    ],
+                  );
                 },
               ),
       ],
+    ),
     );
   }
 
@@ -710,14 +791,14 @@ Widget _buildDeviceItem(String id, String name, String usage, IconData icon) { /
       );
     },
       child: Padding( // Reverted from Container to Padding
-        padding: EdgeInsets.symmetric(vertical: 10, horizontal: 10),
+        padding: EdgeInsets.symmetric(vertical: 12, horizontal: 10), // UPDATED: Increased vertical padding from 10 to 12
         child: Row(
           children: [
-            Icon(icon),
-            SizedBox(width: 8),
-            Text(name, style: GoogleFonts.judson(color: Colors.black, fontSize: 16)),
+            Icon(icon, size: 35), // UPDATED: Increased icon size from default (~24) to 35
+            SizedBox(width: 12), // UPDATED: Increased spacing from 8 to 12
+            Text(name, style: GoogleFonts.judson(color: Colors.black, fontSize: 18)), // UPDATED: Increased font size from 16 to 18
             Spacer(),
-            Text(usage, style: GoogleFonts.jaldi(color: Colors.black, fontWeight: FontWeight.bold, fontSize: 18)),
+            Text(usage, style: GoogleFonts.jaldi(color: Colors.black, fontWeight: FontWeight.bold, fontSize: 20)), // UPDATED: Increased font size from 18 to 20
             SizedBox(width: 8),
           ],
         ),

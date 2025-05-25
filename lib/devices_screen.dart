@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:homesync/adddevices.dart';
 import 'package:homesync/notification_screen.dart';
-// import 'package:weather/weather.dart'; // Weather not implemented yet
+import 'package:weather/weather.dart'; // Added weather import
 import 'package:homesync/welcome_screen.dart';
 import 'package:homesync/relay_state.dart'; // Re-adding for relay state management
 import 'package:homesync/databaseservice.dart';
@@ -12,7 +12,9 @@ import 'dart:math'; // For min function
 import 'package:firebase_auth/firebase_auth.dart'; // Added import for FirebaseAuth
 import 'package:cloud_firestore/cloud_firestore.dart'; // For QueryDocumentSnapshot
 
-// import 'package:homesync/room_data_manager.dart'; // RoomDataManager might need update or be replaced by DatabaseService
+// TODO: Replace 'YOUR_API_KEY' with your actual OpenWeatherMap API key
+const String _apiKey = 'YOUR_API_KEY'; // Placeholder for Weather API Key
+const String _cityName = 'Manila'; // Default city for weather
 
 class DevicesScreen extends StatefulWidget {
   const DevicesScreen({super.key});
@@ -22,7 +24,7 @@ class DevicesScreen extends StatefulWidget {
 }
 
 class DevicesScreenState extends State<DevicesScreen> {
-  // Weather? currentWeather; // Weather not implemented
+  Weather? _currentWeather; // Added weather state variable
   int _selectedIndex = 1;
   final DatabaseService _dbService = DatabaseService();
   StreamSubscription? _appliancesSubscription;
@@ -35,11 +37,60 @@ class DevicesScreenState extends State<DevicesScreen> {
   // UsageService instance
   UsageService? _usageService;
 
+  // Method to get username from Firestore
+  Future<String> getCurrentUsername() async {
+    try {
+      final user = FirebaseAuth.instance.currentUser;
+      if (user != null) {
+        DocumentSnapshot userDoc = await FirebaseFirestore.instance
+            .collection('users')
+            .doc(user.uid)
+            .get();
+        
+        if (userDoc.exists) {
+          Map<String, dynamic> userData = userDoc.data() as Map<String, dynamic>;
+          return userData['username'] ?? ' ';
+        }
+      }
+      return ' ';
+    } catch (e) {
+      print('Error fetching username: $e');
+      return ' ';
+    }
+  }
+
+  // Added weather fetching method
+  Future<void> _fetchWeather() async {
+    if (_apiKey == 'YOUR_API_KEY') {
+      print("Weather API key is a placeholder. Please replace it.");
+      if (mounted) {
+        setState(() {
+          // Keep _currentWeather as null to show placeholder
+        });
+      }
+      return;
+    }
+    WeatherFactory wf = WeatherFactory(_apiKey);
+    try {
+      Weather w = await wf.currentWeatherByCityName(_cityName);
+      if (mounted) {
+        setState(() {
+          _currentWeather = w;
+        });
+      }
+    } catch (e) {
+      print("Failed to fetch weather: $e");
+      if (mounted) {
+        // Handle weather fetch error, e.g., show a default or error message
+      }
+    }
+  }
 
   @override
   void initState() {
     super.initState();
     _usageService = UsageService(); // Initialize UsageService
+    _fetchWeather(); // Fetch weather data
     _listenToAppliances();
     _listenForRelayStateChanges();
     _updateMasterPowerButtonVisualState();
@@ -373,135 +424,180 @@ class DevicesScreenState extends State<DevicesScreen> {
           padding: const EdgeInsets.all(16.0),
           child: Column(
             children: [
-              // Profile + Home Text + Flyout
-              GestureDetector(
-                onTap: () => _showFlyout(context),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.center,
-                  children: [
-                    const Padding(
-                      padding: EdgeInsets.only(top: 20),
-                      child: CircleAvatar(
-                        backgroundColor: Colors.grey,
-                        radius: 25,
-                        child: Icon(Icons.home, color: Colors.black, size: 35),
-                      ),
-                    ),
-                    const SizedBox(width: 10),
-                    const Padding(
-                      padding: EdgeInsets.only(top: 20),
-                      child: Text(
-                        'My Home',
-                        style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              // Weather Info (Placeholder)
-              Transform.translate(
-                offset: const Offset(195, -50),
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                  decoration: BoxDecoration(
-                    color: Colors.transparent,
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                  child: Row(
-                    children: [
-                      const Icon(Icons.cloud_circle_sharp, size: 35, color: Colors.lightBlue),
-                      const SizedBox(width: 4),
-                      Text(
-                        '27°C', // Placeholder
-                        style: GoogleFonts.inter(fontSize: 16),
-                      ),
-                      Transform.translate(
-                        offset: const Offset(-45, 16),
-                        child: Text(
-                          "Today's Weather",
-                          style: GoogleFonts.inter(color: Colors.grey, fontSize: 11),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-              // Navigation Tabs
-              Transform.translate(
-                offset: const Offset(-5, -20),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                  children: [
-                    _buildNavButton('Electricity', _selectedIndex == 0, 0),
-                    _buildNavButton('Appliance', _selectedIndex == 1, 1),
-                    _buildNavButton('Rooms', _selectedIndex == 2, 2),
-                  ],
-                ),
-              ),
-              Transform.translate(
-                offset: const Offset(-1, -20),
-                child: const SizedBox(
-                  width: 1000,
-                  child: Divider(
-                    height: 1,
-                    thickness: 1,
-                    color: Colors.black38,
-                  ),
-                ),
-              ),
-              Expanded(
-                child: Column(
-                  children: [
-                    const SizedBox(height: 1),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              // Updated header section to match homepage design
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  GestureDetector(
+                    onTap: () => _showFlyout(context),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.center,
                       children: [
-                        Expanded(
-                          child: SizedBox(
-                            height: 47,
-                            child: TextField(
-                              decoration: InputDecoration(
-                                hintText: 'Search',
-                                prefixIcon: const Icon(Icons.search),
-                                filled: true,
-                                fillColor: Color(0xFFD9D9D9),
-                                border: OutlineInputBorder(
-                                  borderRadius: BorderRadius.circular(30),
-                                  borderSide: BorderSide(
-                                    color: Colors.grey,
-                                    width: 1.5,
-                                  ),
-                                ),
-                              ),
-                            ),
+                        Transform.translate(
+                          offset: Offset(0, 20),
+                          child: CircleAvatar(
+                            backgroundColor: Colors.grey,
+                            radius: 25,
+                            child: Icon(Icons.home, color: Colors.black, size: 35),
                           ),
                         ),
-                        Padding(
-                          padding: const EdgeInsets.only(left: 8.0),
-                          child: Container(
-                            decoration: BoxDecoration(
-                              color: RelayState.relayStates['relay10'] == 1 ? Colors.black : Colors.grey, // Use relay10 state
-                              borderRadius: BorderRadius.circular(24),
-                            ),
-                            child: IconButton(
-                              icon: Icon(
-                                Icons.power_settings_new,
-                                color: Colors.white,
-                                size: 28,
-                              ),
-                              onPressed: _toggleMasterPower,
-                              tooltip: 'Master Power',
+                        SizedBox(width: 10),
+                        Transform.translate(
+                          offset: Offset(0, 20),
+                          child: SizedBox(
+                            width: 110,
+                            child: FutureBuilder<String>(
+                              future: getCurrentUsername(),
+                              builder: (context, snapshot) {
+                                return Text(
+                                  snapshot.data ?? " ",
+                                  style: TextStyle(
+                                    fontSize: 20,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                );
+                              },
                             ),
                           ),
                         ),
                       ],
                     ),
-                    const SizedBox(height: 25),
-                    Expanded(
-                      child: _devices.isEmpty
-                          ? Center(child: Text("No devices found.", style: GoogleFonts.inter()))
+                  ),
+
+                  // Updated weather section to match homepage
+                  Transform.translate(
+                    offset: Offset(0, 20),
+                    child: Container(
+                      padding: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: Colors.transparent,
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Icon(Icons.cloud_circle_sharp, size: 35, color: Colors.lightBlue),
+                              SizedBox(width: 4),
+                              Transform.translate(
+                                offset: Offset(0, -5),
+                                child: _currentWeather == null
+                                    ? (_apiKey == 'YOUR_API_KEY'
+                                        ? Text('Set API Key', style: GoogleFonts.inter(fontSize: 12))
+                                        : Text('Loading...', style: GoogleFonts.inter(fontSize: 12)))
+                                    : Text(
+                                        '${_currentWeather?.temperature?.celsius?.toStringAsFixed(0) ?? '--'}°C',
+                                        style: GoogleFonts.inter(fontSize: 16),
+                                      ),
+                              ),
+                            ],
+                          ),
+                          Transform.translate(
+                            offset: Offset(40, -15),
+                            child: Text(
+                              _currentWeather?.weatherDescription ?? (_apiKey == 'YOUR_API_KEY' ? 'Weather' : 'Fetching weather...'),
+                              style: GoogleFonts.inter(
+                                color: Colors.grey,
+                                fontSize: 12,
+                              ),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+
+              SizedBox(height: 20),
+
+              // Navigation Tabs
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                children: [
+                  _buildNavButton('Electricity', _selectedIndex == 0, 0),
+                  _buildNavButton('Appliance', _selectedIndex == 1, 1),
+                  _buildNavButton('Rooms', _selectedIndex == 2, 2),
+                ],
+              ),
+
+              SizedBox(
+                width: double.infinity,
+                child: Divider(
+                  height: 1,
+                  thickness: 1,
+                  color: Colors.black38,
+                ),
+              ),
+
+              // UPDATED: Made the entire content area scrollable
+              Expanded(
+                child: SingleChildScrollView(
+                  child: Column(
+                    children: [
+                      const SizedBox(height: 20),
+                      
+                      // UPDATED: Search section moved into scrollable area
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Expanded(
+                            child: SizedBox(
+                              height: 47,
+                              child: TextField(
+                                decoration: InputDecoration(
+                                  hintText: 'Search',
+                                  prefixIcon: const Icon(Icons.search),
+                                  filled: true,
+                                  fillColor: Color(0xFFD9D9D9),
+                                  border: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(30),
+                                    borderSide: BorderSide(
+                                      color: Colors.grey,
+                                      width: 1.5,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                          Padding(
+                            padding: const EdgeInsets.only(left: 8.0),
+                            child: Container(
+                              decoration: BoxDecoration(
+                                color: RelayState.relayStates['relay10'] == 1 ? Colors.black : Colors.grey, // Use relay10 state
+                                borderRadius: BorderRadius.circular(24),
+                              ),
+                              child: IconButton(
+                                icon: Icon(
+                                  Icons.power_settings_new,
+                                  color: Colors.white,
+                                  size: 28,
+                                ),
+                                onPressed: _toggleMasterPower,
+                                tooltip: 'Master Power',
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      
+                      const SizedBox(height: 25),
+                      
+                      // UPDATED: Device grid now uses shrinkWrap and physics: NeverScrollableScrollPhysics
+                      _devices.isEmpty
+                          ? Container(
+                              height: 200, // Give it some height when empty
+                              child: Center(child: Text("No devices found.", style: GoogleFonts.inter())),
+                            )
                           : GridView.builder(
-                              physics: const AlwaysScrollableScrollPhysics(),
+                              shrinkWrap: true, // UPDATED: Allow grid to size itself
+                              physics: NeverScrollableScrollPhysics(), // UPDATED: Disable grid's own scrolling
                               padding: const EdgeInsets.only(bottom: 70),
                               itemCount: _devices.length,
                               gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
@@ -569,8 +665,8 @@ class DevicesScreenState extends State<DevicesScreen> {
                                 );
                               },
                             ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
             ],
@@ -614,11 +710,21 @@ class DevicesScreenState extends State<DevicesScreen> {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text(
-                              _dbService.getCurrentUserId() ?? "User", // Display user ID or name
-                              style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold),
-                              overflow: TextOverflow.ellipsis, 
-                              maxLines: 1, 
+                            // Updated to use FutureBuilder for username
+                            FutureBuilder<String>(
+                              future: getCurrentUsername(),
+                              builder: (context, snapshot) {
+                                return Text(
+                                  snapshot.data ?? "User", // Display username or "User" as fallback
+                                  style: TextStyle(
+                                    color: Colors.white, 
+                                    fontSize: 20, 
+                                    fontWeight: FontWeight.bold
+                                  ),
+                                  overflow: TextOverflow.ellipsis,
+                                  maxLines: 1,
+                                );
+                              },
                             ),
                             Text(
                               _auth.currentUser?.email ?? "email@example.com", // Display user email
