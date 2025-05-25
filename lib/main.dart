@@ -18,12 +18,18 @@ import 'firebase_options.dart'; // Import firebase_options.dart
 import 'package:homesync/deviceinfo.dart'; // Import deviceinfo.dart
 import 'package:homesync/editdevice.dart'; // Import editdevice.dart
 import 'package:homesync/profile_screen.dart';
+import 'package:homesync/databaseservice.dart'; // Import DatabaseService
+import 'package:homesync/usage.dart'; // Import usage.dart for sumAllAppliancesKwh and sumAllAppliancesKwhr
+import 'package:firebase_auth/firebase_auth.dart'; // Import FirebaseAuth
+
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
   );
+
+  // Trigger the appliance update chain on app startup
   runApp(MyApp());
 }
 

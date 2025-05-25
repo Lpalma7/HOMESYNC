@@ -6,6 +6,7 @@ import 'package:homesync/signup_screen.dart';
 import 'package:homesync/welcome_screen.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:homesync/homepage_screen.dart';
+import 'package:homesync/usage.dart'; // Import UsageService
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -20,6 +21,7 @@ class _LoginScreenState extends State<LoginScreen> {
   final _formKey = GlobalKey<FormState>();
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
+  // final UsageService _usageService = UsageService(); // No longer needed here
 
   @override
   void initState() {
@@ -233,15 +235,28 @@ class _LoginScreenState extends State<LoginScreen> {
                   onPressed: () async {
                     if (_formKey.currentState!.validate()) {
                       try {
-                        await FirebaseAuth.instance.signInWithEmailAndPassword(
+                        UserCredential userCredential = await FirebaseAuth.instance.signInWithEmailAndPassword(
                           email: _emailController.text.trim(),
                           password: _passwordController.text.trim(),
                         );
-                        // Navigate to the next screen upon successful login
-                        Navigator.pushReplacement(
-                          context,
-                          MaterialPageRoute(builder: (context) => HomepageScreen()),
-                        );
+                        
+                        if (userCredential.user != null) {
+                          // Call to ensureSummaryUsageDocumentExists removed from here
+                          
+                          // Navigate to the next screen upon successful login
+                          Navigator.pushReplacement(
+                            context,
+                            MaterialPageRoute(builder: (context) => HomepageScreen()),
+                          );
+                        } else {
+                          // Handle case where user is null after successful sign-in (should not happen)
+                           ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('Login successful, but user data is unavailable. Please try again.'),
+                              backgroundColor: Colors.orange,
+                            ),
+                          );
+                        }
                       } on FirebaseAuthException catch (e) {
                         // Display error message to the user
                         ScaffoldMessenger.of(context).showSnackBar(

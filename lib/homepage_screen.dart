@@ -1,26 +1,311 @@
 import 'package:flutter/material.dart';
 import 'package:homesync/deviceinfo.dart';
+import 'package:homesync/usage.dart'; // Import UsageService directly
 import 'package:homesync/welcome_screen.dart';
 import 'package:weather/weather.dart';
 import 'package:homesync/electricity_usage_chart.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:homesync/notification_screen.dart';
 import 'package:homesync/profile_screen.dart';
+import 'package:cloud_firestore/cloud_firestore.dart'; // Import Firestore
+import 'package:firebase_auth/firebase_auth.dart'; // Import FirebaseAuth
+import 'dart:async'; // Import for StreamSubscription
+import 'package:intl/intl.dart'; // Import for date formatting
+// Import OverallDetailedUsageScreen
+
+// TODO: Replace 'YOUR_API_KEY' with your actual OpenWeatherMap API key
+const String _apiKey = 'YOUR_API_KEY'; // Placeholder for Weather API Key
+const String _cityName = 'Manila'; // Default city for weather
 
 class HomepageScreen extends StatefulWidget {
   const HomepageScreen({super.key});
 
   @override
   _HomeScreenState createState() => _HomeScreenState();
-  
 }
 
 class _HomeScreenState extends State<HomepageScreen> {
-  String selectedPeriod = 'Weekly';
-  Weather? currentWeather;
-  int _selectedIndex = 0; 
+  String _selectedPeriod = 'Weekly'; // State variable for selected period
+  Weather? _currentWeather; // Renamed for clarity
+  int _selectedIndex = 0;
+  bool _isRefreshing = false; // State for refresh indicator
 
-  @override // whole frame 
+  double _totalUsageKwh = 0.0; // State variable for total usage
+  double _totalElectricityCost = 0.0; // State variable for total cost
+
+  final FirebaseAuth _auth = FirebaseAuth.instance; // FirebaseAuth instance
+  StreamSubscription? _appliancesSubscription; // StreamSubscription for appliances
+  StreamSubscription? _summarySubscription; // StreamSubscription for summary usage
+  List<QueryDocumentSnapshot<Map<String, dynamic>>> _appliances = []; // List to hold appliance data
+  final UsageService _usageService = UsageService(); // Instantiate UsageService
+
+  // State for selected appliance REMOVED
+  // String? _selectedApplianceId;
+  // String _selectedApplianceName = "";
+  // double _selectedApplianceKwh = 0.0;
+  // double _selectedApplianceCost = 0.0;
+  // bool _isFetchingApplianceData = false;
+  // StreamSubscription? _selectedApplianceUsageSubscription;
+
+
+  @override
+  void initState() {
+    super.initState();
+    _initializeHomepageData();
+  }
+
+  Future<void> _fetchWeather() async {
+    if (_apiKey == 'YOUR_API_KEY') {
+      print("Weather API key is a placeholder. Please replace it.");
+      // Optionally set a default weather or error state
+      if (mounted) {
+        setState(() {
+          // _currentWeather = Weather({ // Example of setting a default or error weather object
+          //   "weather_description": "API Key Needed",
+          //   "temp": null
+          // });
+        });
+      }
+      return;
+    }
+    WeatherFactory wf = WeatherFactory(_apiKey);
+    try {
+      Weather w = await wf.currentWeatherByCityName(_cityName);
+      if (mounted) {
+        setState(() {
+          _currentWeather = w;
+        });
+      }
+    } catch (e) {
+      print("Failed to fetch weather: $e");
+      if (mounted) {
+        // Handle weather fetch error, e.g., show a default or error message
+        // setState(() { _currentWeather = ... });
+      }
+    }
+  }
+
+  Future<void> _initializeHomepageData() async {
+    _fetchWeather(); // Fetch weather data
+    try {
+      final user = _auth.currentUser;
+      if (user != null && user.uid.isNotEmpty) {
+        print("Homepage: User ${user.uid} authenticated. Ensuring yearly_usage structure exists.");
+        // Ensure the yearly_usage structure exists
+        await _usageService.ensureUserYearlyUsageStructureExists(user.uid, DateTime.now());
+      } else {
+        print("Homepage: User not authenticated or UID is empty during initState. Cannot ensure yearly_usage structure or listen to data.");
+        // Handle case where user is somehow null or uid is empty
+        // This might prevent listeners from being set up if user is not valid.
+        if (mounted) {
+          setState(() {
+            _appliances = [];
+            _totalUsageKwh = 0.0;
+            _totalElectricityCost = 0.0;
+          });
+        }
+        return; // Exit early if no valid user
+      }
+      
+      // Proactively update/create all summary documents for the current reference date
+      // This will ensure documents like 'week_total_summary' exist before _listenToSummaryUsage tries to read them.
+      // DEFAULT_KWHR_RATE is a top-level const in usage.dart, accessible due to the import.
+      print("Homepage: Proactively updating all summary totals for user ${user.uid}.");
+      // Using refreshAllUsageDataForDate to ensure per-appliance data is also up-to-date before overall totals.
+      await _usageService.refreshAllUsageDataForDate(
+          userId: user.uid,
+          kwhrRate: DEFAULT_KWHR_RATE, // Assuming DEFAULT_KWHR_RATE is accessible
+          referenceDate: DateTime.now()
+      );
+
+      // Now proceed with other initializations only if user is valid
+      _listenToAppliances();
+      _listenToSummaryUsage();
+    } catch (e, s) {
+      print("Homepage: CRITICAL ERROR during _initializeHomepageData: $e");
+      print("Homepage: Stacktrace: $s");
+      if (mounted) {
+         ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Error initializing homepage data: $e. Please try restarting the app.'),
+              backgroundColor: Colors.red,
+              duration: Duration(seconds: 5),
+            ),
+          );
+      }
+      // Optionally, navigate to an error screen or attempt recovery
+    }
+  }
+
+  // Removed unused _parseTimeString function
+
+  @override
+  void dispose() {
+    _appliancesSubscription?.cancel(); // Cancel the appliances subscription
+    _summarySubscription?.cancel(); // Cancel the summary usage subscription
+    // _selectedApplianceUsageSubscription?.cancel(); // REMOVED
+    super.dispose();
+  }
+
+  void _listenToAppliances() {
+    _appliancesSubscription?.cancel(); // Cancel any existing subscription
+
+    final user = _auth.currentUser;
+    if (user == null) {
+      print("User not authenticated. Cannot fetch appliances.");
+      if (mounted) {
+        setState(() {
+          _appliances = [];
+        });
+      }
+      return;
+    }
+
+    _appliancesSubscription = FirebaseFirestore.instance
+        .collection('users')
+        .doc(user.uid)
+        .collection('appliances')
+        .snapshots()
+        .listen((snapshot) {
+      if (mounted) {
+        setState(() {
+          _appliances = snapshot.docs;
+          // Call sumallkwh and sumallkwhr for each appliance and period
+          _updateAllUsageTotals();
+        });
+      }
+    }, onError: (error) {
+      print("Error listening to appliances: $error");
+      if (mounted) {
+        setState(() {
+          _appliances = [];
+        });
+      }
+    });
+  }
+
+  // Function to call sumallkwh and sumallkwhr for all appliances and periods
+  Future<void> _updateAllUsageTotals() async {
+    // This method's original purpose (retroactive calculation and aggregation trigger)
+    // is now largely handled by UsageService.
+    // The homepage should primarily fetch and display data that UsageService maintains.
+    // If specific on-demand aggregation is needed here, it would require a different approach
+    // that queries the new data structures.
+    // For now, this method can be simplified or removed if _listenToSummaryUsage
+    // correctly fetches the aggregated data.
+    print("INFO: _updateAllUsageTotals in homepage_screen.dart is simplified. UsageService handles ongoing calculations.");
+
+    // We still need to ensure _listenToSummaryUsage is called to fetch the latest totals.
+    _listenToSummaryUsage();
+  }
+
+  // Helper for month name (consistent with UsageService)
+  String _getMonthName(int month) {
+    const monthNames = [
+      '', 'january', 'february', 'march', 'april', 'may', 'june',
+      'july', 'august', 'september', 'october', 'november', 'december'
+    ];
+    return monthNames[month].toLowerCase();
+  }
+
+  // Helper for week of month (consistent with UsageService)
+  int _getWeekOfMonth(DateTime date) {
+    if (date.day <= 7) return 1;
+    if (date.day <= 14) return 2;
+    if (date.day <= 21) return 3;
+    if (date.day <= 28) return 4;
+    return 5;
+  }
+
+  // Function to listen to total usage and cost for the selected period
+  void _listenToSummaryUsage() {
+    _summarySubscription?.cancel(); // Cancel any existing subscription
+
+    final user = _auth.currentUser;
+    if (user == null) {
+      print("User not authenticated. Cannot listen to summary usage.");
+      if (mounted) {
+        setState(() {
+          _totalUsageKwh = 0.0;
+          _totalElectricityCost = 0.0;
+        });
+      }
+      return;
+    }
+
+    String targetDocPath; // This will be the full path to the specific document to listen to.
+
+    // Instantiate UsageService to access its path helpers if they are not static
+    // (they are instance methods in the provided usage.dart)
+    // UsageService usageService = UsageService(); // _usageService is already a member
+
+    DateTime now = DateTime.now(); // For daily path
+
+    switch (_selectedPeriod) {
+      case 'Daily':
+        // To access instance methods like getOverallDailyDocPath, we need an instance.
+        // Assuming _usageService is accessible here.
+        targetDocPath = _usageService.getOverallDailyDocPath(user.uid, now);
+        break;
+      case 'Weekly':
+        targetDocPath = _usageService.getOverallWeeklyDocPath(user.uid, now.year, now.month, _getWeekOfMonth(now));
+        break;
+      case 'Monthly':
+        targetDocPath = _usageService.getOverallMonthlyDocPath(user.uid, now.year, now.month);
+        break;
+      case 'Yearly':
+        targetDocPath = _usageService.getOverallYearlyDocPath(user.uid, now.year);
+        break;
+      default:
+        print("Warning: Unknown period '$_selectedPeriod', defaulting to weekly summary path.");
+        targetDocPath = _usageService.getOverallWeeklyDocPath(user.uid, now.year, now.month, _getWeekOfMonth(now));
+    }
+
+    print("Listening to summary usage document: $targetDocPath for period: $_selectedPeriod");
+
+    _summarySubscription = FirebaseFirestore.instance
+        .doc(targetDocPath) // Listen to the specific document
+        .snapshots()
+        .listen((snapshot) {
+      if (mounted) {
+        double newTotalKwh = 0.0;
+        double newTotalCost = 0.0;
+
+        if (snapshot.exists && snapshot.data() != null) {
+          final Map<String, dynamic> summaryDocumentData = snapshot.data()!;
+          // Data is directly in this document
+          newTotalKwh = (summaryDocumentData['totalKwh'] as num?)?.toDouble() ?? 0.0;
+          newTotalCost = (summaryDocumentData['totalKwhrCost'] as num?)?.toDouble() ?? 0.0;
+        } else {
+          print("Summary document not found at path: $targetDocPath for period $_selectedPeriod. Attempting to create with defaults.");
+          // If document not found, create it with defaults.
+          // This is an async call, but we won't await it here to avoid holding up the stream listener.
+          // The next snapshot from the stream should then pick up the newly created document.
+          _usageService.createMissingSummaryDocumentWithDefaults(targetDocPath);
+          // Values will remain 0.0 for this snapshot, will update on next snapshot if creation is successful.
+        }
+        
+        setState(() {
+          _totalUsageKwh = newTotalKwh;
+          _totalElectricityCost = newTotalCost;
+        });
+      }
+    }, onError: (error) {
+      print("Error listening to summary usage document $targetDocPath for period $_selectedPeriod: $error");
+      if (mounted) {
+        setState(() {
+          _totalUsageKwh = 0.0;
+          _totalElectricityCost = 0.0;
+        });
+      }
+    });
+  }
+
+  // Function to fetch usage for a selected appliance REMOVED
+  // Future<void> _fetchSelectedApplianceUsage() async { ... }
+
+
+  @override // whole frame
   Widget build(BuildContext context) {
     final screenSize = MediaQuery.of(context).size;
     return Scaffold(
@@ -33,124 +318,127 @@ class _HomeScreenState extends State<HomepageScreen> {
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
-              GestureDetector( // profile icon flyout
-                onTap: () => _showFlyout(context),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.center,
-                  children: [
-                     Padding(
-        padding: const EdgeInsets.only(top: 20),
-                     
-                    child:CircleAvatar(
-                      backgroundColor: Colors.grey,
-                      radius: 25,
-                      child: Icon(Icons.home, color: Colors.black, size: 35),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  GestureDetector( // profile icon flyout
+                    onTap: () => _showFlyout(context),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      children: [
+                        CircleAvatar(
+                          backgroundColor: Colors.grey,
+                          radius: 25,
+                          child: Icon(Icons.home, color: Colors.black, size: 35),
+                        ),
+                        SizedBox(width: 10,),
+                        Text(
+                          'My Home',
+                          style: TextStyle(
+                            fontSize: 20,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ],
                     ),
-                     ),
-                    SizedBox(width: 10,),
-                     Padding(
-        padding: const EdgeInsets.only(top: 20),
-                    child: Text(
-                      'My Home',
-                      style: TextStyle(
-                        fontSize: 20,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    ),
-                  ],
-                ),
-              ),
+                  ),
 
 /////////////////////////////////////////////////////////////////////////////////////////////////////////
-              Transform.translate( // weather 
-                offset: Offset(195, -50),
-              child:Container(  
-                padding: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                decoration: BoxDecoration(
-                  color: Colors.transparent,
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                child: Row(
-                  children: [
-                    Icon(Icons.cloud_circle_sharp, size: 35,color: Colors.lightBlue,),
-                    SizedBox(width: 4),
-                    Text('27°C',
-                     style: GoogleFonts.inter(
-                        fontSize: 16,),
+                  Container(  // weather
+                    padding: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: Colors.transparent,
+                      borderRadius: BorderRadius.circular(20),
                     ),
-                    Transform.translate( 
-                offset: Offset(-45, 16),
-                    child:Text(
-                          "Today's Weather", 
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Icon(Icons.cloud_circle_sharp, size: 35, color: Colors.lightBlue),
+                            SizedBox(width: 4),
+                            _currentWeather == null
+                                ? (_apiKey == 'YOUR_API_KEY'
+                                    ? Text('Set API Key', style: GoogleFonts.inter(fontSize: 12))
+                                    : Text('Loading...', style: GoogleFonts.inter(fontSize: 12)))
+                                : Text(
+                                    '${_currentWeather?.temperature?.celsius?.toStringAsFixed(0) ?? '--'}°C',
+                                    style: GoogleFonts.inter(fontSize: 16),
+                                  ),
+                          ],
+                        ),
+                        Text(
+                          _currentWeather?.weatherDescription ?? (_apiKey == 'YOUR_API_KEY' ? 'Weather' : 'Fetching weather...'),
                           style: GoogleFonts.inter(
                             color: Colors.grey,
                             fontSize: 11,
                           ),
+                          overflow: TextOverflow.ellipsis,
                         ),
+                      ],
                     ),
-                  ],
-                ),
-              ),
+                  ),
+                ],
               ),
 //////////////////////////////////////////////////////////////////////////////////////////////////////
 
-              // Navigation Tabs
-            Transform.translate(
-  offset: Offset(-5, -20),
-  child: Row(
-    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-    children: [
-      _buildNavButton('Electricity', _selectedIndex == 0, 0),
-      _buildNavButton('Appliance', _selectedIndex == 1, 1),
-      _buildNavButton('Rooms', _selectedIndex == 2, 2),
-          ],
-          
-        ),
-        
-        ),
+              SizedBox(height: 20), // Add some spacing
 
-                  Transform.translate(
-                offset: Offset(-1, -20),
-              child: SizedBox(
-              width: 1000, 
-              child: Divider(
-                height: 1,
-                thickness: 1,
-                color: Colors.black38,
+              // Navigation Tabs
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                children: [
+                  _buildNavButton('Electricity', _selectedIndex == 0, 0),
+                  _buildNavButton('Appliance', _selectedIndex == 1, 1),
+                  _buildNavButton('Rooms', _selectedIndex == 2, 2),
+                ],
               ),
-            ),
-            ),
+
+              SizedBox(
+                width: double.infinity, // Make the divider take full width
+                child: Divider(
+                  height: 1,
+                  thickness: 1,
+                  color: Colors.black38,
+                ),
+              ),
           
  //////////////////////////////////////////////////////////////////////////////////////////////////////////////////           
             
               // date and usage display
-              Transform.translate( 
-                offset: Offset(0, -10),
-             child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text('Usage',
-                          style: TextStyle(
-                              fontSize: 18, fontWeight: FontWeight.bold)),
-                  
-                      Row(
-                        children: [
-                          Text(selectedPeriod),
-                          IconButton(
-                            icon: Icon(Icons.calendar_month),
-                            onPressed: () => _showPeriodPicker(),
-                          ),
-                        ],
-                      ),
-                  
-                    ],
-                  ),
-                ],
-              ),
+              Padding( // Added Padding to replace Transform.translate
+                padding: EdgeInsets.only(top: 10), // Adjust padding as needed
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text('Usage',
+                            style: TextStyle(
+                                fontSize: 18, fontWeight: FontWeight.bold)),
+                        
+                        Row(
+                          children: [
+                            _isRefreshing 
+                              ? SizedBox(width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 2,))
+                              : IconButton(
+                                  icon: Icon(Icons.refresh),
+                                  onPressed: _handleRefresh,
+                                ),
+                            SizedBox(width: 8), // Spacing between refresh and period
+                            Text(_selectedPeriod), // Use _selectedPeriod
+                            IconButton(
+                              icon: Icon(Icons.calendar_month),
+                              onPressed: () => _showPeriodPicker(),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
               ),
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////           
@@ -159,32 +447,31 @@ class _HomeScreenState extends State<HomepageScreen> {
   child: SingleChildScrollView(
     child: Column(
       children: [
-        Transform.translate(
-          offset: const Offset(0, 0,),
-          child: Container(
+        Container( // Removed Transform.translate
             height: 300,
-            width: 350,
+            width: double.infinity, // Make the graph take full width
             padding: const EdgeInsets.all(8),
             decoration: BoxDecoration(
               color: Colors.grey[350],  
               
               
             ),
-            child: const ElectricityUsageChart(),
+            child: ElectricityUsageChart(selectedPeriod: _selectedPeriod), // Pass selectedPeriod
           ),
-        ),
     
         _buildUsageStat(  // usage status
-          'Electricity Usage',
-          '250.1 kWh',
+          'Total Electricity Usage',
+          '${_totalUsageKwh.toStringAsFixed(3)} kWh', // Display calculated usage with more precision
           Icons.electric_bolt,
         ),
         _buildUsageStat(      // cost usage
-          'Electricity Cost',
-          '1,000.00',
+          'Total Estimated Cost',
+          '₱${_totalElectricityCost.toStringAsFixed(2)}', // Display calculated cost
           Icons.attach_money,
         ),
 
+        // Conditionally display selected appliance stats REMOVED
+        // if (_selectedApplianceId != null) ...[ ... ]
         // Devices List
         _buildDevicesList(),
       ],
@@ -249,7 +536,7 @@ void _showFlyout(BuildContext context) { //flyout na nakaka baliw ayusin
                             maxLines: 1, 
                           ),
                           Text(
-                            "emailExample@gmail.com", 
+                            _auth.currentUser?.email ?? "No email",
                             style: GoogleFonts.inter(
                               color: Colors.white70,
                               fontSize: 14,
@@ -360,19 +647,16 @@ Widget _buildNavButton(String title, bool isSelected, int index) { // nav bar fu
  /////////////////////////////////////////////////////////////////////////////////////////////////////////////// 
   
  Widget _buildUsageStat(String title, String value, IconData icon) { // usage and cost 
-  return Transform.translate(
-    offset: Offset(-5, 10), 
-    child: Padding(
-      padding: EdgeInsets.symmetric(vertical: 10,horizontal: 10),
-      child: Row(
-        children: [
-          Icon(icon),
-          SizedBox(width: 8,),
-          Text(title, style: GoogleFonts.judson(color: Colors.black,fontSize: 16)),
-          Spacer(),
-          Text(value, style: GoogleFonts.jaldi(color: Colors.black,fontWeight: FontWeight.bold,fontSize: 18)),
-        ],
-      ),
+  return Padding( // Replaced Transform.translate with Padding
+    padding: EdgeInsets.symmetric(vertical: 10,horizontal: 10),
+    child: Row(
+      children: [
+        Icon(icon),
+        SizedBox(width: 8,),
+        Text(title, style: GoogleFonts.judson(color: Colors.black,fontSize: 16)),
+        Spacer(),
+        Text(value, style: GoogleFonts.jaldi(color: Colors.black,fontWeight: FontWeight.bold,fontSize: 18)),
+      ],
     ),
   );
 }
@@ -387,28 +671,45 @@ Widget _buildNavButton(String title, bool isSelected, int index) { // nav bar fu
           child: Text('Appliance',
               style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
         ),
-        // TODO: Replace placeholder IDs with actual appliance IDs from Firestore
-        _buildDeviceItem('kitchen_plug_1', 'Kitchen Plug', '24.4 kWh', Icons.power),
-        _buildDeviceItem('bedroom_light_1', 'Bedroom Light', '14.9 kWh', Icons.lightbulb_outline),
-        _buildDeviceItem('living_room_plug_1', 'Living Room Plug', '24.4 kWh', Icons.power),
+        _appliances.isEmpty
+            ? Center(child: Text("No appliances found."))
+            : ListView.builder(
+                shrinkWrap: true, // Important for nested ListView
+                physics: NeverScrollableScrollPhysics(), // Disable scrolling for the inner ListView
+                itemCount: _appliances.length,
+                itemBuilder: (context, index) {
+                  final applianceDoc = _appliances[index];
+                  final applianceData = applianceDoc.data();
+                  final String applianceId = applianceDoc.id;
+                  final String applianceName = applianceData['applianceName'] as String? ?? 'Unknown Device';
+                  // We won't display usage here, it will be displayed in DeviceInfoScreen
+                  // final String usage = applianceData['totalKwhr']?.toStringAsFixed(1) ?? '0.0'; // Assuming totalKwhr exists
+                  final int iconCodePoint = (applianceData['icon'] is int) ? (applianceData['icon'] as int) : Icons.devices.codePoint;
+                  final IconData icon = IconData(iconCodePoint, fontFamily: 'MaterialIcons');
+
+                  return _buildDeviceItem(applianceId, applianceName, '', icon); // Pass empty string for usage for now
+                },
+              ),
       ],
     );
   }
 
   /////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 Widget _buildDeviceItem(String id, String name, String usage, IconData icon) { // device settings // Added id parameter
+  // bool isSelected = _selectedApplianceId == id; // REMOVED
   return GestureDetector(
     onTap: () {
+      // Reverted to original navigation logic
       Navigator.push(
         context,
-        MaterialPageRoute(builder: (context) => DeviceInfoScreen( // Changed to DeviceInfoScreen
-          applianceId: id, // Pass applianceId
+        MaterialPageRoute(builder: (context) => DeviceInfoScreen( 
+          applianceId: id, 
           initialDeviceName: name,
           // initialDeviceUsage: usage, // Usage will be fetched from Firestore by DeviceInfoScreen
         )),
       );
     },
-      child: Padding(
+      child: Padding( // Reverted from Container to Padding
         padding: EdgeInsets.symmetric(vertical: 10, horizontal: 10),
         child: Row(
           children: [
@@ -444,24 +745,56 @@ Widget _buildDeviceItem(String id, String name, String usage, IconData icon) { /
             tileColor: Colors.white, 
             title: Text('Monthly'),
             onTap: () {
-              setState(() => selectedPeriod = 'Monthly');
-              Navigator.pop(context);
+              setState(() {
+                _selectedPeriod = 'Monthly';
+              });
+              _listenToSummaryUsage();
+              // if (_selectedApplianceId != null) { // REMOVED
+              //   _fetchSelectedApplianceUsage();
+              // }
+              Navigator.pop(context); // Close the dialog
             },
           ),
           ListTile(
             tileColor: Colors.white,
             title: Text('Weekly'),
             onTap: () {
-              setState(() => selectedPeriod = 'Weekly');
-              Navigator.pop(context);
+              setState(() {
+                _selectedPeriod = 'Weekly';
+              });
+              _listenToSummaryUsage();
+              // if (_selectedApplianceId != null) { // REMOVED
+              //  _fetchSelectedApplianceUsage();
+              // }
+              Navigator.pop(context); // Close the dialog
             },
           ),
           ListTile(
             tileColor: Colors.white,
             title: Text('Yearly'),
             onTap: () {
-              setState(() => selectedPeriod = 'Yearly');
-              Navigator.pop(context);
+              setState(() {
+                _selectedPeriod = 'Yearly';
+              });
+              _listenToSummaryUsage();
+              // if (_selectedApplianceId != null) { // REMOVED
+              //   _fetchSelectedApplianceUsage();
+              // }
+              Navigator.pop(context); // Close the dialog
+            },
+          ),
+           ListTile(
+            tileColor: Colors.white,
+            title: Text('Daily'),
+            onTap: () {
+              setState(() {
+                _selectedPeriod = 'Daily';
+              });
+              _listenToSummaryUsage();
+              //  if (_selectedApplianceId != null) { // REMOVED
+              //   _fetchSelectedApplianceUsage();
+              // }
+              Navigator.pop(context); // Close the dialog
             },
           ),
         ],
@@ -469,4 +802,49 @@ Widget _buildDeviceItem(String id, String name, String usage, IconData icon) { /
     ),
   );
 }
+
+  Future<void> _handleRefresh() async {
+    final user = _auth.currentUser;
+    if (user == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('User not authenticated. Cannot refresh.')),
+      );
+      return;
+    }
+    if (_isRefreshing) return;
+
+    setState(() {
+      _isRefreshing = true;
+    });
+
+    try {
+      print("Homepage: Manual refresh initiated by user ${user.uid}.");
+      // Use refreshAllUsageDataForDate to ensure all underlying data is recalculated
+      await _usageService.refreshAllUsageDataForDate(
+        userId: user.uid,
+        kwhrRate: DEFAULT_KWHR_RATE,
+        referenceDate: DateTime.now(), // Refresh for the current day context
+      );
+      // The listeners should pick up the changes.
+      // If not, explicitly call _listenToSummaryUsage() and _listenToAppliances()
+      _listenToSummaryUsage(); // Re-listen to ensure UI updates with latest overall totals
+      _listenToAppliances();   // Re-listen to ensure appliance list is fresh (if it could change)
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Usage data refreshed!')),
+      );
+    } catch (e, s) {
+      print("Homepage: Error during manual refresh: $e");
+      print("Homepage: Stacktrace: $s");
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error refreshing data: $e'), backgroundColor: Colors.red),
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isRefreshing = false;
+        });
+      }
+    }
+  }
 }
