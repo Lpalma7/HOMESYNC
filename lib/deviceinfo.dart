@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:homesync/device_usage.dart';
 import 'package:homesync/usage.dart'; // Now imports UsageService
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'dart:async';
@@ -707,16 +708,23 @@ class DeviceInfoScreenState extends State<DeviceInfoScreen> {
         backgroundColor: const Color(0xFFE9E7E6), // Match scaffold background
         elevation: 0, // No shadow
         leading: IconButton(
-          icon: Icon(Icons.arrow_back, size: 30, color: Colors.black), // Adjusted size for visibility
+          icon: Transform.translate(
+        offset: Offset(5, 0),
+          child: Icon(Icons.arrow_back, size: 50, color: Colors.black), 
+          ),// Adjusted size for visibility
           onPressed: () => Navigator.of(context).pop(),
         ),
-        title: Text(
+      
+         title: Transform.translate(
+      offset: Offset(2, 5),
+        child: Text(
           _currentDeviceName,
           style: GoogleFonts.jaldi(
             textStyle: TextStyle(fontSize: 23, fontWeight: FontWeight.bold, color: Colors.black),
           ),
           overflow: TextOverflow.ellipsis,
         ),
+         ),
         actions: [
           _isRefreshing
               ? Padding(
@@ -724,7 +732,10 @@ class DeviceInfoScreenState extends State<DeviceInfoScreen> {
                   child: SizedBox(width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.black)),
                 )
               : IconButton(
-                  icon: Icon(Icons.refresh, color: Colors.black),
+                     icon: Transform.translate(
+                offset: Offset(-20, 5), 
+                  child: Icon(Icons.refresh, color: Colors.black, size: 30,),
+                     ),
                   onPressed: _handleRefresh,
                 ),
         ],
@@ -809,7 +820,7 @@ class DeviceInfoScreenState extends State<DeviceInfoScreen> {
                   ),
                 // Energy Usage
                 Transform.translate(
-                  offset: Offset(0, -30),
+                  offset: Offset(0, 5),
                   child: Row( // Use Row to place text and icon side-by-side
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
@@ -833,6 +844,7 @@ class DeviceInfoScreenState extends State<DeviceInfoScreen> {
                   ),
                 ),
                 // Energy Stats
+                SizedBox(height: 20),
                 Transform.translate(
                   offset: Offset(0, -15),
                   child: _isLoadingUsage
@@ -858,7 +870,7 @@ class DeviceInfoScreenState extends State<DeviceInfoScreen> {
                         ),
                 ),
                  Transform.translate(
-                  offset: Offset(0, -15),
+                  offset: Offset(0, -9),
                   child: _buildEnergyStatCard(
                     title: "Estimated Cost",
                     value: "₱${(_totalElectricityCost).toStringAsFixed(2)}", // Display fetched kwhrcost
@@ -866,9 +878,11 @@ class DeviceInfoScreenState extends State<DeviceInfoScreen> {
                     icon: Icons.attach_money,
                   ),
                 ),
+              
                 // Removed the else block that displayed daily and total usage
+                 
                 Container( // Removed Transform.translate
-                    margin: const EdgeInsets.only(bottom: 10, top: 10), // Added top margin
+                    margin: const EdgeInsets.only(bottom: 0, top: 0), // Added top margin
                     padding: EdgeInsets.all(16),
                     decoration: BoxDecoration(
                       color: Colors.white,
@@ -881,8 +895,10 @@ class DeviceInfoScreenState extends State<DeviceInfoScreen> {
                         ),
                       ],
                     ),
+                    
                     child: Row(
                       children: [
+
                         Container(
                           padding: EdgeInsets.all(10),
                           decoration: BoxDecoration(
@@ -934,13 +950,13 @@ class DeviceInfoScreenState extends State<DeviceInfoScreen> {
                   onPressed: () {
                     // Navigate to the detailed usage screen
                     Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => OverallDetailedUsageScreen(
-                          selectedPeriod: _selectedPeriod.toLowerCase(), // Pass the selected period in lowercase
-                        ),
-                      ),
-                    );
+  context,
+  MaterialPageRoute(
+    builder: (context) => DeviceUsage(
+      
+    ),
+  ),
+);
                   },
                   child: Text(
                     'View Detailed Usage',

@@ -21,6 +21,7 @@ import 'package:homesync/profile_screen.dart';
 import 'package:homesync/databaseservice.dart'; // Import DatabaseService
 import 'package:homesync/usage.dart'; // Import usage.dart for sumAllAppliancesKwh and sumAllAppliancesKwhr
 import 'package:firebase_auth/firebase_auth.dart'; // Import FirebaseAuth
+import 'package:homesync/device_usage.dart';
 
 
 void main() async {
@@ -75,6 +76,8 @@ class MyApp extends StatelessWidget {
           );
         },
        '/profile':(context) => ProfileScreen(),
+       '/deviceusage':(context) => DeviceUsage(),
+
 
 
       },
