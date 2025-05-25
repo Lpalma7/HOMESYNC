@@ -26,7 +26,7 @@ class DeviceUsageState extends State<DeviceUsage> with SingleTickerProviderState
     _tabController = TabController(length: 4, vsync: this); 
   }
 
-  Widget usageTile(String leading, String title, String usage, String cost, {bool showCircle = true}) {
+  Widget usageTile(String leading, String title, String usage, String cost, {bool showCircle = true, Widget? customTitle}) {
     
     return Container(
       margin: const EdgeInsets.symmetric(vertical: 10, horizontal: 20),
@@ -45,67 +45,98 @@ class DeviceUsageState extends State<DeviceUsage> with SingleTickerProviderState
         ],
       ),
 
-
-      
       child: Row(
-  children: [
-    if (showCircle) 
-      Container(
-        width: 44, 
-        height: 45, 
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          color: Colors.blue[300],
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.3),
-              spreadRadius: 2,
-              blurRadius: 2,
-              offset: const Offset(0, 3),
-            ),
-          ],
-        ),
-        
-        child: Center(
-         child:  Transform.translate( 
-                  offset: Offset(1, 2),
-          child: Text(
-            leading,
-            style: GoogleFonts.jaldi(
-              color: Colors.white,
-              fontSize: 25,
+        children: [
+          if (showCircle) 
+            Container(
+              width: 44, 
+              height: 45, 
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: Colors.blue[300],
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.3),
+                    spreadRadius: 2,
+                    blurRadius: 2,
+                    offset: const Offset(0, 3),
+                  ),
+                ],
+              ),
               
+              child: Center(
+               child:  Transform.translate( 
+                        offset: Offset(1, 2),
+                child: Text(
+                  leading,
+                  style: GoogleFonts.jaldi(
+                    color: Colors.white,
+                    fontSize: 25,
+                    
+                  ),
+                ),
+              ),
+            ),
+            ),
+                           
+          if (showCircle) const SizedBox(width: 10), 
+                
+          // Use Expanded with flex to prevent overflow
+          Expanded(
+            flex: 3,
+            child: customTitle ?? Text(
+              title,  
+              style: GoogleFonts.jaldi(fontSize: 20, fontWeight: FontWeight.w500),
+              overflow: TextOverflow.ellipsis,
+              maxLines: 1,
+            )
+          ),
+
+          const SizedBox(width: 8),
+
+          // Constrain usage container
+          Flexible(
+            flex: 1,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              decoration: BoxDecoration(
+                color: Colors.grey[300], 
+                borderRadius: BorderRadius.circular(20), 
+                border: Border.all()
+              ),
+              child: Text(
+                usage,  
+                style: GoogleFonts.jaldi(fontSize: 15),
+                textAlign: TextAlign.center,
+                overflow: TextOverflow.ellipsis,
+              ), 
             ),
           ),
-        ),
-      ),
-      ),
-                     
-    if (showCircle) const SizedBox(width: 10), 
+
+          const SizedBox(width: 8),
           
-          Expanded(child: Text(title,  style: GoogleFonts.jaldi(fontSize: 20, fontWeight: FontWeight.w500))),
-
-
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 6),
-            decoration: BoxDecoration(color: Colors.grey[300], borderRadius: 
-            BorderRadius.circular(20), border:Border.all()),
-            
-           
-            child: Text(usage,  style: GoogleFonts.jaldi (fontSize: 15)), 
-          ),
-
-          const SizedBox(width: 10),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-            decoration: BoxDecoration(color: Colors.green[100], borderRadius: BorderRadius.circular(8),border: Border.all()),
-            child: Text(cost,  style: TextStyle(fontSize: 16)), 
+          // Constrain cost container
+          Flexible(
+            flex: 1,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              decoration: BoxDecoration(
+                color: Colors.green[100], 
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all()
+              ),
+              child: Text(
+                cost,  
+                style: TextStyle(fontSize: 15),
+                textAlign: TextAlign.center,
+                overflow: TextOverflow.ellipsis,
+              ), 
+            ),
           ),
         ],
       ),
     );
   }
-
 
   // Helper to get week of month (1-5) for a given date
   // Week 1: days 1-7, Week 2: days 8-14, ..., Week 5: days 29-31
@@ -281,9 +312,28 @@ class DeviceUsageState extends State<DeviceUsage> with SingleTickerProviderState
 
       final String path = '/users/${widget.userId}/appliances/${widget.applianceId}/yearly_usage/$year/monthly_usage/$monthDocId/week_usage/$weekDocId/day_usage/$dayDocId';
 
-      // Daily display: "number of day" "Month date, name of the day" '{kwh}' '{kwhrcost}'
+      // Daily display: "number of day" "Month date" on first line, "name of the day" on second line
       String leadingText = dateToDisplay.day.toString(); // "number of day"
-      String titleText = DateFormat('MMMM d, EEEE').format(dateToDisplay); // "Month date, name of the day"
+      String monthDateText = DateFormat('MMMM d').format(dateToDisplay); // "Month date"
+      String dayNameText = DateFormat('EEEE').format(dateToDisplay); // "name of the day"
+
+      // Create custom title widget with month/date and day name stacked
+      Widget customTitleWidget = Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            monthDateText,
+            style: GoogleFonts.jaldi(fontSize: 18, fontWeight: FontWeight.w500),
+            overflow: TextOverflow.ellipsis,
+          ),
+          Text(
+            dayNameText,
+            style: GoogleFonts.jaldi(fontSize: 14, fontWeight: FontWeight.w400, color: Colors.grey[600]),
+            overflow: TextOverflow.ellipsis,
+          ),
+        ],
+      );
 
       dailyWidgets.add(
         FutureBuilder<DocumentSnapshot>(
@@ -304,9 +354,10 @@ class DeviceUsageState extends State<DeviceUsage> with SingleTickerProviderState
             }
             return usageTile(
               leadingText,
-              titleText,
+              '', // Empty string since we're using customTitle
               displayKwh,
               displayCost,
+              customTitle: customTitleWidget,
             );
           },
         )
