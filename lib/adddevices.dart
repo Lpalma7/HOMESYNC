@@ -275,7 +275,7 @@ class _AddDeviceScreenState extends State<AddDeviceScreen> {
                   ),
                   _buildRequiredTextField(
                     wattageController,
-                    "Wattage",
+                    "Watts",
                     Icons.energy_savings_leaf,
                     keyboardType: TextInputType.number,
                     errorText: wattageError

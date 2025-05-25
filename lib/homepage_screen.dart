@@ -466,8 +466,8 @@ class _HomeScreenState extends State<HomepageScreen> {
         ),
         _buildUsageStat(      // cost usage
           'Total Estimated Cost',
-          '₱${_totalElectricityCost.toStringAsFixed(2)}', // Display calculated cost
-          Icons.attach_money,
+          '₱ ${_totalElectricityCost.toStringAsFixed(2)}', // Display calculated cost
+          Icons.php_rounded, 
         ),
 
         // Conditionally display selected appliance stats REMOVED
@@ -651,11 +651,11 @@ Widget _buildNavButton(String title, bool isSelected, int index) { // nav bar fu
     padding: EdgeInsets.symmetric(vertical: 10,horizontal: 10),
     child: Row(
       children: [
-        Icon(icon),
+        Icon(icon, size: 30,),
         SizedBox(width: 8,),
         Text(title, style: GoogleFonts.judson(color: Colors.black,fontSize: 16)),
         Spacer(),
-        Text(value, style: GoogleFonts.jaldi(color: Colors.black,fontWeight: FontWeight.bold,fontSize: 18)),
+        Text(value, style: TextStyle(color: Colors.black,fontWeight: FontWeight.bold,fontSize: 15)),
       ],
     ),
   );
