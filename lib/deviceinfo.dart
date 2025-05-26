@@ -213,28 +213,121 @@ class DeviceInfoScreenState extends State<DeviceInfoScreen> {
   }
 
   void _addRoom() async {
+    TextEditingController newRoomController = TextEditingController();
+    IconData roomIconSelected = Icons.home;
+
     String? newRoomName = await showDialog<String>(
       context: context,
       builder: (BuildContext context) {
-        TextEditingController newRoomController = TextEditingController();
         return AlertDialog(
+          backgroundColor: const Color(0xFFE9E7E6),
+          titleTextStyle: GoogleFonts.jaldi(
+            fontSize: 25,
+            fontWeight: FontWeight.bold,
+            color: Colors.black,
+          ),
           title: Text('Add New Room'),
-          content: TextField(
-            controller: newRoomController,
-            decoration: InputDecoration(hintText: "Enter Room Name"),
+          content: StatefulBuilder(
+            builder: (BuildContext context, StateSetter setDialogState) {
+              return SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    TextField(
+                      controller: newRoomController,
+                      style: GoogleFonts.inter(
+                        textStyle: TextStyle(fontSize: 17),
+                        color: Colors.black,
+                      ),
+                      decoration: InputDecoration(
+                        filled: true,
+                        fillColor: Colors.white,
+                        border: OutlineInputBorder(),
+                        hintText: "Enter Room Name",
+                        hintStyle: GoogleFonts.inter(
+                          color: Colors.grey,
+                          fontSize: 15,
+                        ),
+                        prefixIcon: Icon(
+                          roomIconSelected,
+                          color: Colors.black,
+                          size: 24,
+                        ),
+                      ),
+                    ),
+                    SizedBox(height: 15),
+                    Text(
+                      'Select Icon',
+                      style: GoogleFonts.jaldi(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.black,
+                      ),
+                    ),
+                    SizedBox(height: 5),
+                    Container(
+                      height: 200,
+                      width: double.maxFinite,
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: GridView.count(
+                        crossAxisCount: 4,
+                        shrinkWrap: true,
+                        children: [
+                          Icons.living, Icons.bed, Icons.kitchen, Icons.dining,
+                          Icons.bathroom, Icons.meeting_room, Icons.workspace_premium, Icons.chair,
+                          Icons.stairs, Icons.garage, Icons.yard, Icons.balcony,
+                        ].map((icon) {
+                          return IconButton(
+                            icon: Icon(
+                              icon,
+                              color: roomIconSelected == icon ? Theme.of(context).colorScheme.secondary : Colors.black,
+                            ),
+                            onPressed: () {
+                              setDialogState(() {
+                                roomIconSelected = icon;
+                              });
+                            },
+                          );
+                        }).toList(),
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            }
           ),
           actions: <Widget>[
             TextButton(
-              child: Text('Cancel'),
+              child: Text(
+                'Cancel',
+                style: GoogleFonts.jaldi(
+                  textStyle: TextStyle(fontSize: 18, color: Colors.black87),
+                ),
+              ),
               onPressed: () {
                 Navigator.of(context).pop();
               },
             ),
             TextButton(
-              child: Text('Add'),
-              onPressed: () {
-                Navigator.of(context).pop(newRoomController.text.trim());
+              onPressed: () async {
+                if (newRoomController.text.trim().isNotEmpty) {
+                  Navigator.of(context).pop(newRoomController.text.trim());
+                }
               },
+              style: ButtonStyle(
+                backgroundColor: WidgetStateProperty.all(Colors.black),
+                foregroundColor: WidgetStateProperty.all(Colors.white),
+              ),
+              child: Text(
+                'Add',
+                style: GoogleFonts.jaldi(
+                  textStyle: TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
+                  color: Colors.white,
+                ),
+              ),
             ),
           ],
         );
@@ -245,10 +338,14 @@ class DeviceInfoScreenState extends State<DeviceInfoScreen> {
       final userId = _auth.currentUser?.uid; // Use _auth instance
       if (userId != null) {
         try {
-          // Add the new room to the database
+          // Add the new room to the database with both name and icon
           await _dbService.addDocumentToCollection( // Use _dbService instance
             collectionPath: 'users/$userId/Rooms', // Corrected path
-            data: {'roomName': newRoomName},
+            data: {
+              'roomName': newRoomName,
+              'icon': roomIconSelected.codePoint,
+              'createdAt': FieldValue.serverTimestamp(),
+            },
           );
           // Refresh the room list
           await _fetchRooms();
