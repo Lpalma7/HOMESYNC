@@ -66,7 +66,7 @@ class NotificationSettingsState extends State<NotificationSettings> {
                     const SizedBox(height: 10),
                     _buildNotificationTile(
                       title: 'System',
-                      subtitle: 'Updates, Device sharing, New devices',
+                      subtitle: 'Updates & New devices',
                        onTap: () {
                         Navigator.push(
                           context,

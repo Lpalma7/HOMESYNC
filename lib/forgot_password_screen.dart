@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:homesync/login_screen.dart';
 import 'package:homesync/signup_screen.dart';
@@ -15,11 +16,25 @@ class ForgotPasswordScreen extends StatefulWidget {
 
 class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
   bool _rememberMe = false;
+  bool _passwordVisible = false;
+  final _formKey = GlobalKey<FormState>();
+  final _emailController = TextEditingController();
+  final _passwordController = TextEditingController();
+  final _forgotEmailController = TextEditingController(); // For the modal
 
   @override
   void initState() {
     super.initState();
     _loadRememberMe();
+    _passwordVisible = false;
+  }
+
+  @override
+  void dispose() {
+    _emailController.dispose();
+    _passwordController.dispose();
+    _forgotEmailController.dispose();
+    super.dispose();
   }
 
   void _loadRememberMe() async {
@@ -41,9 +56,11 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
       appBar: null,
       body: Stack(
         children: [
-          Padding(
+          // Your original background design
+          SingleChildScrollView(
             padding: EdgeInsets.all(14),
-            child: SingleChildScrollView(
+            child: Form(
+              key: _formKey,
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
@@ -59,31 +76,23 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                             MaterialPageRoute(builder: (context) => WelcomeScreen()),
                           );
                         },
-                        style: ButtonStyle(
-                          overlayColor: WidgetStateProperty.all(Colors.transparent),
-                        ),
                       ),
                     ),
                   ),
-
                   Center(
                     child: Transform.translate(
                       offset: Offset(0, -20),
-                      child: Padding(
-                        padding: EdgeInsets.only(top: 1, bottom: 10),
-                        child: Image.asset(
-                          'assets/homesync_logo.png',
-                          height: 120,
-                          errorBuilder: (context, error, stackTrace) {
-                            return Text('HomeSync', style: TextStyle(fontSize: 30));
-                          },
-                        ),
+                      child: Image.asset(
+                        'assets/homesync_logo.png',
+                        height: 120,
+                        errorBuilder: (context, error, stackTrace) {
+                          return Text('HomeSync', style: TextStyle(fontSize: 40));
+                        },
                       ),
                     ),
                   ),
-
-                  Transform.translate(
-                    offset: Offset(-55, -182),
+                  Transform.translate( //title
+                    offset: Offset(-55, -170),
                     child: Text(
                       'LOG IN',
                       textAlign: TextAlign.center,
@@ -94,8 +103,8 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                     ),
                   ),
 
-                  Transform.translate(
-                    offset: Offset(1, -80),
+                  Transform.translate( // title
+                    offset: Offset(1, -70),
                     child: Text(
                       'HOMESYNC',
                       textAlign: TextAlign.center,
@@ -105,56 +114,94 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                       ),
                     ),
                   ),
-                  SizedBox(height: 50),
                   Transform.translate(
-                    offset: Offset(0, -100),
-                    child: TextField(
+                    offset: Offset(0, -30),
+                    child: TextFormField(
+                      controller: _emailController,
                       keyboardType: TextInputType.emailAddress,
                       decoration: InputDecoration(
                         filled: true,
-                        fillColor: Colors.white,
-                        prefixIcon: Icon(Icons.email, color: Colors.black),
+                        fillColor: Colors.transparent,
+                        prefixIcon: Icon(
+                          Icons.email,
+                          color: Colors.black,
+                        ),
                         hintText: 'Email Address',
-                        border: OutlineInputBorder(),
+                        hintStyle: TextStyle(color: Colors.grey),
+                        errorStyle: TextStyle(color: Colors.red),
                       ),
+                      validator: (value) {
+                        if (value == null || value.isEmpty) {
+                          return 'Email is required';
+                        }
+                        return null;
+                      },
                     ),
                   ),
 
-                  SizedBox(height: 15),
                   Transform.translate(
-                    offset: Offset(0, -90),
-                    child: TextField(
-                      obscureText: true,
+                    offset: Offset(0, -20),
+                    child: TextFormField(
+                      controller: _passwordController,
+                      obscureText: !_passwordVisible,
                       decoration: InputDecoration(
                         filled: true,
-                        fillColor: Colors.white,
-                        prefixIcon: Icon(Icons.lock, color: Colors.black),
+                        fillColor: Colors.transparent,
+                        prefixIcon: Icon(
+                          Icons.lock,
+                          color: Colors.black,
+                        ),
+                        suffixIcon: IconButton(
+                          icon: Icon(
+                            
+                            _passwordVisible 
+                                ? Icons.visibility 
+                                : Icons.visibility_off,
+                            color: Colors.grey,
+                          ),
+                          onPressed: () {
+                           
+                            setState(() {
+                              _passwordVisible = !_passwordVisible;
+                            });
+                          },
+                        ),
                         hintText: 'Password',
-                        border: OutlineInputBorder(),
+                        hintStyle: TextStyle(color: Colors.grey),
+                        errorStyle: TextStyle(color: Colors.red),
                       ),
+                      validator: (value) {
+                        if (value == null || value.isEmpty) {
+                          return 'Password is required';
+                        }
+                        return null;
+                      },
                     ),
                   ),
-
-                  SizedBox(height: 10),
+                  
                   Transform.translate(
-                    offset: Offset(110, -98),
+                    offset: Offset(100, -25),
                     child: TextButton(
                       onPressed: () {
-                        Navigator.pushNamed(context, '/forgot-password');
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(builder: (context) => ForgotPasswordScreen()),
+                        );  
                       },
                       child: Text(
                         'Forgot Password?',
                         style: GoogleFonts.inter(
-                          textStyle: TextStyle(fontSize: 13),
+                          textStyle: TextStyle(
+                            fontSize: 14,
+                          ),
                           color: Colors.grey,
                         ),
                       ),
                     ),
                   ),
 
-                  const SizedBox(height: 10),
                   Transform.translate(
-                    offset: const Offset(-7, -155),
+                    offset: Offset(-10, -70),
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
@@ -169,11 +216,14 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                                 _saveRememberMe(value!);
                               },
                             ),
-                            Text(
-                              "Remember Me",
-                              style: GoogleFonts.inter(
-                                textStyle: TextStyle(fontSize: 13),
-                                color: Colors.grey,
+                            Transform.translate(
+                              offset: Offset(-10, -1),
+                              child: Text(
+                                "Remember Me",
+                                style: GoogleFonts.inter(
+                                  textStyle: TextStyle(fontSize: 14),
+                                  color: Colors.grey,
+                                ),
                               ),
                             ),
                           ],
@@ -181,15 +231,48 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                       ],
                     ),
                   ),
-
+                  
                   Transform.translate(
-                    offset: Offset(0, -115),
+                    offset: Offset(0, -20),
                     child: ElevatedButton(
-                      onPressed: () {
-                        Navigator.pushReplacement(
-                          context,
-                          MaterialPageRoute(builder: (context) => HomepageScreen()),
-                        );
+                      onPressed: () async {
+                        if (_formKey.currentState!.validate()) {
+                          try {
+                            UserCredential userCredential = await FirebaseAuth.instance.signInWithEmailAndPassword(
+                              email: _emailController.text.trim(),
+                              password: _passwordController.text.trim(),
+                            );
+                            
+                            if (userCredential.user != null) {
+                              // Navigate to the next screen upon successful login
+                              Navigator.pushReplacement(
+                                context,
+                                MaterialPageRoute(builder: (context) => HomepageScreen()),
+                              );
+                            } else {
+                               ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text('Login successful, but user data is unavailable. Please try again.'),
+                                  backgroundColor: Colors.orange,
+                                ),
+                              );
+                            }
+                          } on FirebaseAuthException catch (e) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text(e.message ?? 'An error occurred during login.'),
+                                backgroundColor: Colors.red,
+                              ),
+                            );
+                          } catch (e) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text('An unexpected error occurred.'),
+                                backgroundColor: Colors.red,
+                              ),
+                            );
+                          }
+                        }
                       },
                       style: ElevatedButton.styleFrom(
                         padding: EdgeInsets.symmetric(vertical: 13, horizontal: 10),
@@ -200,34 +283,31 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                         ),
                         elevation: 5,
                         shadowColor: Colors.black.withOpacity(0.5),
-                        splashFactory: NoSplash.splashFactory,
                       ),
                       child: Text(
                         'Log In',
-                        style: GoogleFonts.judson(fontSize: 24, color: Colors.black),
+                        style: GoogleFonts.judson(
+                          fontSize: 24,
+                          color: Colors.black,
+                        ),
                       ),
                     ),
                   ),
 
-                  Transform.translate(
-                    offset: Offset(3, -55),
-                    child: TextButton(
-                      onPressed: () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(builder: (context) => SignUpScreen()),
-                        );
-                      },
-                      style: ButtonStyle(
-                        minimumSize: WidgetStateProperty.all(Size.zero),
-                        padding: WidgetStateProperty.all(EdgeInsets.symmetric(horizontal: 8, vertical: 4)),
-                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                        overlayColor: WidgetStateProperty.all(Colors.transparent),
-                      ),
-                      child: Text(
-                        'Don\'t have an account? SIGN UP',
-                        style: GoogleFonts.inter(
-                          textStyle: TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
+                  SizedBox(height: 10),
+                  TextButton(
+                    onPressed: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (context) => SignUpScreen()),
+                      );
+                    },
+                    child: Text(
+                      'Don\'t have an account SIGN UP',
+                      style: GoogleFonts.inter(
+                        textStyle: TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.bold,
                           color: Colors.grey,
                         ),
                       ),
@@ -237,97 +317,144 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
               ),
             ),
           ),
-          Stack(
-            children: [
-              Positioned(
-                top: -100,
-                bottom: 0,
-                left: 0,
-                right: 0,
-                child: SizedBox(
-                  width: double.infinity,
-                  height: 100,
-                  child: ElevatedButton(
-                    style: ElevatedButton.styleFrom(
-                      padding: EdgeInsets.all(0),
-                      backgroundColor: const Color(0x80000000),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(0),
-                      ),
-                      splashFactory: NoSplash.splashFactory,
-                    ),
-                    child: Text(''),
-                    onPressed: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(builder: (context) => LoginScreen()),
-                      );
-                    },
-                  ),
-                ),
+          
+          // Semi-transparent overlay
+          Container(
+            width: double.infinity,
+            height: double.infinity,
+            color: Colors.black.withOpacity(0.3),
+          ),
+          
+          // Forgot password dialog modal
+          Center(
+            child: Container(
+              margin: EdgeInsets.symmetric(horizontal: 20),
+              padding: EdgeInsets.all(24),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(12),
               ),
-
-              Positioned(
-                bottom: 235,
-                left: 20,
-                right: 20,
-                child: Container(
-                  height: 200,
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    border: Border.all(color: Colors.white, width: 9),
-                    borderRadius: BorderRadius.circular(5),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    'Forgot password?',
+                    style: GoogleFonts.inter(
+                      fontSize: 24,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.black,
+                    ),
                   ),
-                  alignment: Alignment.center,
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    crossAxisAlignment: CrossAxisAlignment.start,
+                  SizedBox(height: 16),
+                  Text(
+                    'Enter your email address to receive a verification code.',
+                    textAlign: TextAlign.center,
+                    style: GoogleFonts.inter(
+                      fontSize: 16,
+                      color: Colors.grey[600],
+                    ),
+                  ),
+                  SizedBox(height: 24),
+                  TextField(
+                    controller: _forgotEmailController,
+                    keyboardType: TextInputType.emailAddress,
+                    decoration: InputDecoration(
+                      prefixIcon: Container(
+                        padding: EdgeInsets.all(12),
+                        child: Icon(Icons.email, color: Colors.black, size: 24),
+                      ),
+                      hintText: 'Enter your email',
+                      hintStyle: TextStyle(color: Colors.grey[500], fontSize: 16),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                        borderSide: BorderSide(color: Colors.grey[400]!),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                        borderSide: BorderSide(color: Colors.black, width: 2),
+                      ),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                        borderSide: BorderSide(color: Colors.grey[400]!),
+                      ),
+                      contentPadding: EdgeInsets.symmetric(vertical: 16, horizontal: 12),
+                    ),
+                  ),
+                  SizedBox(height: 24),
+                  Row(
                     children: [
-                      Transform.translate(
-                        offset: Offset(5, -15),
-                        child: Text(
-                          'Forgot password?',
-                          style: GoogleFonts.jaldi(
-                            textStyle: TextStyle(
-                                fontSize: 25, fontWeight: FontWeight.bold),
-                          ),
-                        ),
-                      ),
-                      Transform.translate(
-                        offset: Offset(6, -10),
-                        child: Text(
-                          'Enter the code that been sent in your email.',
-                          style: GoogleFonts.fredoka(
-                            textStyle: TextStyle(fontSize: 15),
-                          ),
-                        ),
-                      ),
-                      Transform.translate(
-                        offset: Offset(1, 15),
-                        child: TextField(
-                          decoration: InputDecoration(
-                            prefixIcon: Padding(
-                              padding: EdgeInsets.only(left: 1, right: 15, bottom: 1),
-                              child: Icon(
-                                Icons.qr_code,
-                                color: Colors.black,
-                                size: 35,
-                              ),
+                      Expanded(
+                        child: TextButton(
+                          onPressed: () {
+                            Navigator.pop(context);
+                          },
+                          child: Text(
+                            'Cancel',
+                            style: GoogleFonts.inter(
+                              fontSize: 16,
+                              color: Colors.grey[600],
+                              fontWeight: FontWeight.w500,
                             ),
-                            hintText: 'Enter Code',
-                            contentPadding: EdgeInsets.symmetric(vertical: 12, horizontal: 2),
                           ),
-                          keyboardType: TextInputType.number,
-                          maxLength: 6, 
+                        ),
+                      ),
+                      SizedBox(width: 12),
+                      Expanded(
+                        child: ElevatedButton(
+                          onPressed: () async {
+                            if (_forgotEmailController.text.trim().isNotEmpty) {
+                              try {
+                                await FirebaseAuth.instance.sendPasswordResetEmail(
+                                  email: _forgotEmailController.text.trim(),
+                                );
+                                Navigator.pop(context);
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                    content: Text('Password reset email sent!'),
+                                    backgroundColor: Colors.green,
+                                  ),
+                                );
+                              } on FirebaseAuthException catch (e) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                    content: Text(e.message ?? 'Error sending reset email'),
+                                    backgroundColor: Colors.red,
+                                  ),
+                                );
+                              }
+                            } else {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text('Please enter your email address'),
+                                  backgroundColor: Colors.orange,
+                                ),
+                              );
+                            }
+                          },
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.black,
+                            foregroundColor: Colors.white,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            padding: EdgeInsets.symmetric(vertical: 16),
+                          ),
+                          child: Text(
+                            'Send Code',
+                            style: GoogleFonts.inter(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
                         ),
                       ),
                     ],
                   ),
-                ),
+                ],
               ),
-            ],
-          )
-        ], 
+            ),
+          ),
+        ],
       ),
     );
   }

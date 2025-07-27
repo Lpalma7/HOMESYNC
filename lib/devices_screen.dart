@@ -30,6 +30,9 @@ class DevicesScreenState extends State<DevicesScreen> {
   StreamSubscription? _appliancesSubscription;
 
   List<QueryDocumentSnapshot<Map<String, dynamic>>> _devices = []; // To store appliance documents
+  List<QueryDocumentSnapshot<Map<String, dynamic>>> _filteredDevices = []; // To store filtered devices
+  final TextEditingController _searchController = TextEditingController(); // Search controller
+  String _searchQuery = ''; // Current search query
 
   // Local state for master power button visual, true if it's in "ON" commanding mode
   bool _masterPowerButtonState = false;
@@ -86,6 +89,33 @@ class DevicesScreenState extends State<DevicesScreen> {
     }
   }
 
+  // Search filtering method
+  void _filterDevices() {
+    setState(() {
+      if (_searchQuery.isEmpty) {
+        _filteredDevices = List.from(_devices);
+      } else {
+        _filteredDevices = _devices.where((deviceDoc) {
+          final deviceData = deviceDoc.data();
+          final String applianceName = (deviceData['applianceName'] as String? ?? '').toLowerCase();
+          final String roomName = (deviceData['roomName'] as String? ?? '').toLowerCase();
+          final String deviceType = (deviceData['deviceType'] as String? ?? '').toLowerCase();
+          final String searchLower = _searchQuery.toLowerCase();
+          
+          return applianceName.contains(searchLower) ||
+                 roomName.contains(searchLower) ||
+                 deviceType.contains(searchLower);
+        }).toList();
+      }
+    });
+  }
+
+  // Search query update method
+  void _updateSearchQuery(String query) {
+    _searchQuery = query;
+    _filterDevices();
+  }
+
   @override
   void initState() {
     super.initState();
@@ -94,6 +124,11 @@ class DevicesScreenState extends State<DevicesScreen> {
     _listenToAppliances();
     _listenForRelayStateChanges();
     _updateMasterPowerButtonVisualState();
+
+    // Initialize search controller listener
+    _searchController.addListener(() {
+      _updateSearchQuery(_searchController.text);
+    });
 
     // User authentication check is handled within methods that need userId.
   }
@@ -156,6 +191,7 @@ class DevicesScreenState extends State<DevicesScreen> {
       print("User not authenticated. Cannot fetch appliances.");
       setState(() {
         _devices = [];
+        _filteredDevices = [];
       });
       return;
     }
@@ -173,6 +209,8 @@ class DevicesScreenState extends State<DevicesScreen> {
         setState(() {
           // Get all devices from Firestore
           _devices = snapshot.docs;
+          // Apply current search filter
+          _filterDevices();
 
           print("Found ${_devices.length} devices from Firestore");
           print("Device fields: applianceName, applianceStatus, deviceType, icon, roomName");
@@ -190,6 +228,7 @@ class DevicesScreenState extends State<DevicesScreen> {
       if (mounted) {
         setState(() {
           _devices = [];
+          _filteredDevices = [];
         });
       }
     });
@@ -213,6 +252,7 @@ class DevicesScreenState extends State<DevicesScreen> {
   @override
   void dispose() {
     _appliancesSubscription?.cancel();
+    _searchController.dispose(); // Dispose search controller
     super.dispose();
   }
 
@@ -537,12 +577,17 @@ class DevicesScreenState extends State<DevicesScreen> {
 
               // UPDATED: Made the entire content area scrollable
               Expanded(
-                child: SingleChildScrollView(
+                child: GestureDetector(
+                  onTap: () {
+                    
+                    FocusScope.of(context).unfocus();
+                  },
+                  child: SingleChildScrollView(
                   child: Column(
                     children: [
                       const SizedBox(height: 20),
                       
-                      // UPDATED: Search section moved into scrollable area
+                      
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
@@ -550,9 +595,19 @@ class DevicesScreenState extends State<DevicesScreen> {
                             child: SizedBox(
                               height: 47,
                               child: TextField(
+                                controller: _searchController,
                                 decoration: InputDecoration(
-                                  hintText: 'Search',
+                                  hintText: 'Search appliance...',
+                                  hintStyle: TextStyle(fontSize: 16),
                                   prefixIcon: const Icon(Icons.search),
+                                  suffixIcon: _searchQuery.isNotEmpty
+                                      ? IconButton(
+                                          icon: Icon(Icons.clear),
+                                          onPressed: () {
+                                            _searchController.clear();
+                                          },
+                                        )
+                                      : null,
                                   filled: true,
                                   fillColor: Color(0xFFD9D9D9),
                                   border: OutlineInputBorder(
@@ -562,7 +617,12 @@ class DevicesScreenState extends State<DevicesScreen> {
                                       width: 1.5,
                                     ),
                                   ),
+                                  contentPadding: EdgeInsets.symmetric(vertical: 12, horizontal: 20),
                                 ),
+                                style: TextStyle(fontSize: 16),
+                                onChanged: (value) {
+                                 
+                                },
                               ),
                             ),
                           ),
@@ -589,24 +649,32 @@ class DevicesScreenState extends State<DevicesScreen> {
                       
                       const SizedBox(height: 25),
                       
-                      // UPDATED: Device grid now uses shrinkWrap and physics: NeverScrollableScrollPhysics
-                      _devices.isEmpty
+                      // UPDATED: Device grid now uses filtered devices
+                      _filteredDevices.isEmpty
                           ? Container(
-                              height: 200, // Give it some height when empty
-                              child: Center(child: Text("No devices found.", style: GoogleFonts.inter())),
+                              height: 200, 
+                              child: Center(
+                                child: Text(
+                                  _searchQuery.isNotEmpty 
+                                      ? "No devices found matching '${_searchQuery}'"
+                                      : "No devices found.",
+                                  style: GoogleFonts.inter(),
+                                  textAlign: TextAlign.center,
+                                )
+                              ),
                             )
                           : GridView.builder(
-                              shrinkWrap: true, // UPDATED: Allow grid to size itself
-                              physics: NeverScrollableScrollPhysics(), // UPDATED: Disable grid's own scrolling
+                              shrinkWrap: true, 
+                              physics: NeverScrollableScrollPhysics(), 
                               padding: const EdgeInsets.only(bottom: 70),
-                              itemCount: _devices.length,
+                              itemCount: _filteredDevices.length,
                               gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
                                 crossAxisCount: 2,
                                 crossAxisSpacing: 10,
                                 mainAxisSpacing: 10,
                               ),
                               itemBuilder: (context, index) {
-                                final deviceDoc = _devices[index];
+                                final deviceDoc = _filteredDevices[index];
                                 final deviceData = deviceDoc.data();
                                 // Extract all required fields from Firestore
                                 final String applianceName = deviceData['applianceName'] as String? ?? 'Unknown Device';
@@ -668,6 +736,7 @@ class DevicesScreenState extends State<DevicesScreen> {
                     ],
                   ),
                 ),
+              ),
               ),
             ],
           ),

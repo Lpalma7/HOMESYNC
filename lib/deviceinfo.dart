@@ -50,8 +50,7 @@ class DeviceInfoScreenState extends State<DeviceInfoScreen> {
   final String _selectedUsagePeriod = 'daily'; // Default to daily
   bool _isRefreshing = false; // State for refresh indicator
 
-  // Editable fields
-  late TextEditingController _nameController;
+  // Editable fields - removed _nameController since name is no longer editable
   late TextEditingController _roomController;
   late TextEditingController _typeController;
   final TextEditingController _kWhRateController = TextEditingController(text: "0.0"); // Initialize immediately
@@ -74,7 +73,7 @@ class DeviceInfoScreenState extends State<DeviceInfoScreen> {
   @override
   void initState() {
     super.initState();
-    _nameController = TextEditingController(text: widget.initialDeviceName);
+    // Removed _nameController initialization since name is no longer editable
     _roomController = TextEditingController(); // Will be populated from fetched data
     _typeController = TextEditingController(); // Will be populated from fetched data
     _usageService = UsageService(); // Initialize UsageService
@@ -95,7 +94,7 @@ class DeviceInfoScreenState extends State<DeviceInfoScreen> {
   void dispose() {
     _applianceSubscription?.cancel();
     _periodicUsageSubscription?.cancel(); // Cancel the new subscription
-    _nameController.dispose();
+    // Removed _nameController.dispose() since it's no longer used
     _roomController.dispose();
     _typeController.dispose();
     _kWhRateController.dispose(); // Dispose the new controller
@@ -136,8 +135,7 @@ class DeviceInfoScreenState extends State<DeviceInfoScreen> {
               _isDeviceOn = (data['applianceStatus'] == 'ON');
               _currentDeviceName = data['applianceName'] ?? widget.initialDeviceName;
 
-              // Populate editing fields
-              _nameController.text = _currentDeviceName;
+              // Populate editing fields - removed _nameController.text line
               _roomController.text = data['roomName'] ?? "";
               print("RoomController text set to: ${_roomController.text}"); // Add print statement
               _deviceType = data['deviceType'] ?? "Light"; // Set the device type for dropdown
@@ -276,9 +274,8 @@ class DeviceInfoScreenState extends State<DeviceInfoScreen> {
                         crossAxisCount: 4,
                         shrinkWrap: true,
                         children: [
-                          Icons.living, Icons.bed, Icons.kitchen, Icons.dining,
-                          Icons.bathroom, Icons.meeting_room, Icons.workspace_premium, Icons.chair,
-                          Icons.stairs, Icons.garage, Icons.yard, Icons.balcony,
+                        Icons.living, Icons.bed, Icons.kitchen, Icons.dining,
+                        Icons.bathroom, Icons.meeting_room,Icons.garage, Icons.local_library, Icons.stairs,
                         ].map((icon) {
                           return IconButton(
                             icon: Icon(
@@ -659,9 +656,8 @@ class DeviceInfoScreenState extends State<DeviceInfoScreen> {
    
     double kWhRate = double.tryParse(_kWhRateController.text) ?? 0.0;
 
-    // Data to update on the appliance document
+    // Data to update on the appliance document - removed 'applianceName' since it's no longer editable
     final applianceUpdateData = {
-      'applianceName': _nameController.text,
       'roomName': _roomController.text,
       'deviceType': _deviceType,
       'icon': _selectedIcon.codePoint,
@@ -774,25 +770,11 @@ class DeviceInfoScreenState extends State<DeviceInfoScreen> {
   // List of common icons for devices
   List<IconData> _getCommonIcons() {
     return [
-      Icons.lightbulb_outline,
-      Icons.power_outlined,
-      Icons.power_settings_new,
-      Icons.ac_unit_outlined,
-      Icons.tv_outlined,
-      Icons.air_outlined,
-      Icons.device_thermostat,
-      Icons.kitchen,
-      Icons.water_drop_outlined,
-      Icons.microwave_outlined,
-      Icons.coffee_maker_outlined,
-      Icons.speaker_outlined,
-      Icons.computer_outlined,
-      Icons.router_outlined,
-      Icons.videogame_asset_outlined,
-      Icons.camera_outlined,
-      Icons.shower_outlined,
-      Icons.local_laundry_service_outlined,
-      Icons.devices_other_outlined,
+      Icons.light, Icons.tv, Icons.power, Icons.kitchen,
+          Icons.speaker, Icons.laptop, Icons.ac_unit, Icons.microwave,Icons.coffee_maker,Icons.radio_button_checked,
+          Icons.thermostat,Icons.doorbell,Icons.camera,Icons.sensor_door,Icons.lock,Icons.door_sliding,Icons.local_laundry_service,
+          Icons.dining,Icons.rice_bowl,Icons.wind_power,Icons.router,Icons.outdoor_grill,Icons.air,Icons.alarm,
+      
     ];
   }
 
@@ -1076,8 +1058,7 @@ class DeviceInfoScreenState extends State<DeviceInfoScreen> {
                     ),
                   ),
                 ),
-                SizedBox(height: 24), // Add spacing after the button
-                // Editing Section
+                SizedBox(height: 24), 
                 Text(
                   "Appliance Details",
                   style: TextStyle(
@@ -1086,18 +1067,27 @@ class DeviceInfoScreenState extends State<DeviceInfoScreen> {
                   ),
                 ),
                 SizedBox(height: 16),
+                
+                
                 TextField(
-
-                  controller: _nameController,
+                  controller: TextEditingController(text: _currentDeviceName),
+                  enabled: false, 
                   decoration: InputDecoration(
                     filled: true,
                     fillColor: Colors.white,
                     labelText: 'Appliance Name',
                     labelStyle: GoogleFonts.jaldi(
+                      color: Colors.black,
                       fontSize: 20,
-
                     ),
-                     border: OutlineInputBorder(),
+                    border: OutlineInputBorder(),
+                    disabledBorder: OutlineInputBorder(
+                      borderSide: BorderSide(color: Colors.black),
+                    ),
+                  ),
+                  style: GoogleFonts.jaldi(
+                    fontSize: 20,
+                    color: Colors.black87,
                   ),
                 ),
 
@@ -1592,4 +1582,4 @@ extension StringExtension on String {
 
 // Removed _fetchLatestDailyUsage, sumallkwh, and sumallkwhr methods as they used the old path structure
 // and their functionality is either covered by _calculateTotalUsageForPeriod (for display)
-// or handled by UsageService (for calculation and storage).
+// or handled by UsageService (for calculation and storage)
