@@ -95,6 +95,24 @@ class NotificationSettingsState extends State<NotificationSettings> {
                         );
                       },
                     ),
+                    const SizedBox(height: 20),
+                    Text(
+                      'Testing & Debug',
+                     style: GoogleFonts.jaldi(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                        textStyle: TextStyle(fontSize: 30, fontWeight: FontWeight.bold),
+                        color: Colors.black,
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    _buildNotificationTile(
+                      title: 'Test Notifications',
+                      subtitle: 'Test Android notification pop-ups',
+                     onTap: () {
+                        Navigator.pushNamed(context, '/notificationtest');
+                      },
+                    ),
                   ],
                 ),
               ),

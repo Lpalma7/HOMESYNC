@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:homesync/login_screen.dart';
 import 'package:homesync/signup_screen.dart';
 import 'package:homesync/welcome_screen.dart';
 import 'package:shared_preferences/shared_preferences.dart';

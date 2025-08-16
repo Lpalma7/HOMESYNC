@@ -310,7 +310,7 @@ class RoomsState extends State<Rooms> {
                         
                         return RoomItem(
                           title: roomName,
-                          icon: IconData(iconCodePoint, fontFamily: 'MaterialIcons'),
+                          icon: _getIconFromCodePoint(iconCodePoint),
                           appliances: [],
                         );
                       }).toList();
@@ -325,7 +325,7 @@ class RoomsState extends State<Rooms> {
                       if (filteredRooms.isEmpty && _searchQuery.isNotEmpty) {
                         return Center(
                           child: Text(
-                            "No rooms found matching '${_searchQuery}'",
+                            "No rooms found matching '$_searchQuery'",
                             style: GoogleFonts.inter(),
                             textAlign: TextAlign.center,
                           )
@@ -514,14 +514,13 @@ class RoomsState extends State<Rooms> {
                     child: GridView.count(
                       crossAxisCount: 4,
                       shrinkWrap: true,
-                      children: [
+                      children: const [
                         Icons.living, Icons.bed, Icons.kitchen, Icons.dining,
                         Icons.bathroom, Icons.meeting_room,Icons.garage, Icons.local_library, Icons.stairs,
                       ].map((icon) {
                         return IconButton(
                           icon: Icon(
                             icon,
-                            color: roomIconSelected == icon ? Theme.of(context).colorScheme.secondary : Colors.black,
                           ),
                           onPressed: () {
                             setDialogState(() {
@@ -779,6 +778,45 @@ class RoomsState extends State<Rooms> {
       },
     );
   }
+}
+
+IconData _getIconFromCodePoint(int codePoint) {
+  final Map<int, IconData> iconMap = {
+    Icons.light.codePoint: Icons.light,
+    Icons.tv.codePoint: Icons.tv,
+    Icons.power.codePoint: Icons.power,
+    Icons.kitchen.codePoint: Icons.kitchen,
+    Icons.speaker.codePoint: Icons.speaker,
+    Icons.laptop.codePoint: Icons.laptop,
+    Icons.ac_unit.codePoint: Icons.ac_unit,
+    Icons.microwave.codePoint: Icons.microwave,
+    Icons.coffee_maker.codePoint: Icons.coffee_maker,
+    Icons.radio_button_checked.codePoint: Icons.radio_button_checked,
+    Icons.thermostat.codePoint: Icons.thermostat,
+    Icons.doorbell.codePoint: Icons.doorbell,
+    Icons.camera.codePoint: Icons.camera,
+    Icons.sensor_door.codePoint: Icons.sensor_door,
+    Icons.lock.codePoint: Icons.lock,
+    Icons.door_sliding.codePoint: Icons.door_sliding,
+    Icons.local_laundry_service.codePoint: Icons.local_laundry_service,
+    Icons.dining.codePoint: Icons.dining,
+    Icons.rice_bowl.codePoint: Icons.rice_bowl,
+    Icons.wind_power.codePoint: Icons.wind_power,
+    Icons.router.codePoint: Icons.router,
+    Icons.outdoor_grill.codePoint: Icons.outdoor_grill,
+    Icons.air.codePoint: Icons.air,
+    Icons.alarm.codePoint: Icons.alarm,
+    Icons.living.codePoint: Icons.living,
+    Icons.bed.codePoint: Icons.bed,
+    Icons.bathroom.codePoint: Icons.bathroom,
+    Icons.meeting_room.codePoint: Icons.meeting_room,
+    Icons.garage.codePoint: Icons.garage,
+    Icons.local_library.codePoint: Icons.local_library,
+    Icons.stairs.codePoint: Icons.stairs,
+    Icons.devices.codePoint: Icons.devices,
+    Icons.home.codePoint: Icons.home,
+  };
+  return iconMap[codePoint] ?? Icons.devices;
 }
 
 class RoomItem {
