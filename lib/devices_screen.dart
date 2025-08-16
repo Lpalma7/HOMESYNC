@@ -651,12 +651,12 @@ class DevicesScreenState extends State<DevicesScreen> {
                       
                       // UPDATED: Device grid now uses filtered devices
                       _filteredDevices.isEmpty
-                          ? Container(
+                          ? SizedBox(
                               height: 200, 
                               child: Center(
                                 child: Text(
                                   _searchQuery.isNotEmpty 
-                                      ? "No devices found matching '${_searchQuery}'"
+                                      ? "No devices found matching '$_searchQuery'"
                                       : "No devices found.",
                                   style: GoogleFonts.inter(),
                                   textAlign: TextAlign.center,
@@ -724,7 +724,7 @@ class DevicesScreenState extends State<DevicesScreen> {
                                       deviceType: deviceType,
                                       // Pass individual state, but consider master switch for visual
                                       isOn: RelayState.relayStates['relay10'] == 1 && isOn,
-                                      icon: IconData(iconCodePoint, fontFamily: 'MaterialIcons'),
+                                      icon: _getIconFromCodePoint(iconCodePoint),
                                       applianceStatus: applianceStatus, // Pass applianceStatus
                                       masterSwitchIsOn: RelayState.relayStates['relay10'] == 1, // Pass master switch state
                                       applianceId: deviceDoc.id, // Pass applianceId
@@ -1038,3 +1038,42 @@ class DeviceCard extends StatelessWidget {
 
 // Helper for FirebaseAuth instance, if not already available via _dbService
 final FirebaseAuth _auth = FirebaseAuth.instance;
+
+IconData _getIconFromCodePoint(int codePoint) {
+  final Map<int, IconData> iconMap = {
+    Icons.light.codePoint: Icons.light,
+    Icons.tv.codePoint: Icons.tv,
+    Icons.power.codePoint: Icons.power,
+    Icons.kitchen.codePoint: Icons.kitchen,
+    Icons.speaker.codePoint: Icons.speaker,
+    Icons.laptop.codePoint: Icons.laptop,
+    Icons.ac_unit.codePoint: Icons.ac_unit,
+    Icons.microwave.codePoint: Icons.microwave,
+    Icons.coffee_maker.codePoint: Icons.coffee_maker,
+    Icons.radio_button_checked.codePoint: Icons.radio_button_checked,
+    Icons.thermostat.codePoint: Icons.thermostat,
+    Icons.doorbell.codePoint: Icons.doorbell,
+    Icons.camera.codePoint: Icons.camera,
+    Icons.sensor_door.codePoint: Icons.sensor_door,
+    Icons.lock.codePoint: Icons.lock,
+    Icons.door_sliding.codePoint: Icons.door_sliding,
+    Icons.local_laundry_service.codePoint: Icons.local_laundry_service,
+    Icons.dining.codePoint: Icons.dining,
+    Icons.rice_bowl.codePoint: Icons.rice_bowl,
+    Icons.wind_power.codePoint: Icons.wind_power,
+    Icons.router.codePoint: Icons.router,
+    Icons.outdoor_grill.codePoint: Icons.outdoor_grill,
+    Icons.air.codePoint: Icons.air,
+    Icons.alarm.codePoint: Icons.alarm,
+    Icons.living.codePoint: Icons.living,
+    Icons.bed.codePoint: Icons.bed,
+    Icons.bathroom.codePoint: Icons.bathroom,
+    Icons.meeting_room.codePoint: Icons.meeting_room,
+    Icons.garage.codePoint: Icons.garage,
+    Icons.local_library.codePoint: Icons.local_library,
+    Icons.stairs.codePoint: Icons.stairs,
+    Icons.devices.codePoint: Icons.devices,
+    Icons.home.codePoint: Icons.home,
+  };
+  return iconMap[codePoint] ?? Icons.devices;
+}

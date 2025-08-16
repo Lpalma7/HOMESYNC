@@ -751,14 +751,13 @@ class _AddDeviceScreenState extends State<AddDeviceScreen> {
                     child: GridView.count(
                       crossAxisCount: 4,
                       shrinkWrap: true,
-                      children: [
+                      children: const [
                         Icons.living, Icons.bed, Icons.kitchen, Icons.dining,
                         Icons.bathroom, Icons.meeting_room,Icons.garage, Icons.local_library, Icons.stairs,
                       ].map((icon) {
                         return IconButton(
                           icon: Icon(
                             icon,
-                            color: roomIconSelected == icon ? Theme.of(context).colorScheme.secondary : Colors.black,
                           ),
                           onPressed: () {
                             setDialogState(() {
@@ -977,7 +976,7 @@ class _AddDeviceScreenState extends State<AddDeviceScreen> {
       builder: (_) => GridView.count(
         crossAxisCount: 4,
         shrinkWrap: true,
-        children: [
+        children: const [
           Icons.light, Icons.tv, Icons.power, Icons.kitchen,
           Icons.speaker, Icons.laptop, Icons.ac_unit, Icons.microwave,Icons.coffee_maker,Icons.radio_button_checked,
           Icons.thermostat,Icons.doorbell,Icons.camera,Icons.sensor_door,Icons.lock,Icons.door_sliding,Icons.local_laundry_service,

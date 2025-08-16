@@ -22,6 +22,8 @@ import 'package:homesync/profile_screen.dart';
 // Import usage.dart for sumAllAppliancesKwh and sumAllAppliancesKwhr
 // Import FirebaseAuth
 import 'package:homesync/device_usage.dart';
+import 'package:homesync/notification_manager.dart';
+import 'package:homesync/notification_test_screen.dart';
 
 
 void main() async {
@@ -29,6 +31,10 @@ void main() async {
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
   );
+
+  // Initialize notification system
+  final notificationManager = NotificationManager();
+  await notificationManager.initialize();
 
   // Trigger the appliance update chain on app startup
   runApp(MyApp());
@@ -59,6 +65,7 @@ class MyApp extends StatelessWidget {
         '/notificationsettings':(context) => NotificationSettings(),
         '/systemnotif':(context) => SystemNotif(),
         '/devicenotif':(context) => DeviceNotif(),
+        '/notificationtest':(context) => NotificationTestScreen(),
         '/roominfo': (context) => Roomsinfo(roomItem: ModalRoute.of(context)!.settings.arguments as String),
         '/schedule': (context)=> Schedule(),
         '/deviceinfo': (context) {
