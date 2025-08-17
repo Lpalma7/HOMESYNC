@@ -3,6 +3,7 @@
 import 'package:firebase_core/firebase_core.dart' show FirebaseOptions;
 import 'package:flutter/foundation.dart'
     show defaultTargetPlatform, kIsWeb, TargetPlatform;
+import 'package:homesync/config.dart';
 
 /// Default [FirebaseOptions] for use with your Firebase apps.
 ///
@@ -51,7 +52,7 @@ class DefaultFirebaseOptions {
   );
 
   static const FirebaseOptions android = FirebaseOptions(
-    apiKey: 'AIzaSyAXkXcdits7ciCUp46TqCxxJDsg0GXfz8c',
+    apiKey: API_KEY,
     appId: '1:258697759332:android:9c63bb5a2b0772fe3b2d71',
     messagingSenderId: '258697759332',
     projectId: 'homeautomation-b6d6d',

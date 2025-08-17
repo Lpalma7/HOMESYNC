@@ -1,18 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:homesync/databaseservice.dart';
-import 'package:cloud_firestore/cloud_firestore.dart'; // For Timestamp or FieldValue if needed
-
-// Device class can be removed if not used for local list management anymore,
-// or kept if there's a reason for it. For now, it's not directly used for Firestore interaction.
-/*
-class Device {
-  // ... (original Device class)
-}
-*/
+import 'package:cloud_firestore/cloud_firestore.dart';
 
 class Schedule extends StatefulWidget {
-  final Map<String, dynamic>? routeArgs; // Expects {'applianceId': 'xyz', ...otherData} for editing
+  final Map<String, dynamic>? routeArgs;
 
   const Schedule({super.key, this.routeArgs});
 
@@ -23,8 +15,8 @@ class Schedule extends StatefulWidget {
 class ScheduleState extends State<Schedule> {
   final DatabaseService _dbService = DatabaseService();
   final TextEditingController applianceNameController = TextEditingController();
-  final TextEditingController kwhController = TextEditingController();
-  // final TextEditingController roomController = TextEditingController(); // Not directly used for selectedRoom
+  final TextEditingController wattageController = TextEditingController();
+  final TextEditingController roomController = TextEditingController(); // Using text field instead of dropdown
   final TextEditingController socketController = TextEditingController(); // For relay name
 
   final _formKey = GlobalKey<FormState>();
@@ -56,11 +48,12 @@ class ScheduleState extends State<Schedule> {
   IconData selectedIcon = Icons.device_hub; // Default icon
 
   bool isEditing = false;
+  bool _isLoading = true; // Add loading state to prevent UI errors
   String? editingApplianceId; // Firestore document ID of the appliance being edited
   Map<String, dynamic>? _initialApplianceData; // To store original data for status preservation
 
   String? applianceNameError;
-  String? kwhError;
+  String? wattageError;
   String? roomError;
   String? socketError; // For relay
   String? timeError;
@@ -69,6 +62,12 @@ class ScheduleState extends State<Schedule> {
   @override
   void initState() {
     super.initState();
+    // Initialize error states to null to prevent showing errors initially
+    timeError = null;
+    daysError = null;
+    
+    // Initialize UI state
+    _isLoading = false;
   }
 
   @override
@@ -79,71 +78,112 @@ class ScheduleState extends State<Schedule> {
     if (args != null && args['applianceId'] != null) {
       isEditing = true;
       editingApplianceId = args['applianceId'] as String;
+      
+      // Set loading state
+      setState(() {
+        _isLoading = true;
+      });
+      
       // Fetch full appliance data to populate the form accurately
       _loadApplianceDataForEditing(editingApplianceId!);
     } else if (args != null) {
         // If args are present but no applianceId, it might be pre-fill for a new device
-        // This logic can be expanded if needed, e.g. pre-filling from AddDeviceScreen arguments
         applianceNameController.text = args['applianceName'] ?? '';
         selectedRoom = args['roomName'];
+        if (selectedRoom != null) {
+          roomController.text = selectedRoom!;
+        }
         deviceType = args['deviceType'] ?? 'Light';
-        // Icon might need to be derived or passed
+        if (args['relay'] != null) {
+          socketController.text = args['relay'] as String;
+        }
     }
   }
 
   Future<void> _loadApplianceDataForEditing(String applianceId) async {
-    DocumentSnapshot<Map<String, dynamic>>? snapshot = await _dbService.getDocument(
-        collectionPath: 'users/${_dbService.getCurrentUserId()}/appliances',
-        docId: applianceId
-    );
+    try {
+      DocumentSnapshot<Map<String, dynamic>>? snapshot = await _dbService.getDocument(
+          collectionPath: 'users/${_dbService.getCurrentUserId()}/appliances',
+          docId: applianceId
+      );
 
-    if (snapshot != null && snapshot.exists) {
-      final data = snapshot.data()!;
-      _initialApplianceData = data; // Store initial data
+      if (snapshot != null && snapshot.exists) {
+        final data = snapshot.data()!;
+        _initialApplianceData = data; // Store initial data
 
-      setState(() {
-        applianceNameController.text = data['applianceName'] ?? '';
-        kwhController.text = (data['kwh'] ?? 0.0).toString();
-        selectedRoom = data['roomName'];
-        deviceType = data['deviceType'] ?? 'Light';
-        selectedIcon = IconData(data['icon'] ?? Icons.device_hub.codePoint, fontFamily: 'MaterialIcons');
-        socketController.text = data['relay'] ?? ''; // For 'Socket' type
+        setState(() {
+          applianceNameController.text = data['applianceName'] ?? '';
+          wattageController.text = (data['wattage'] ?? 0.0).toString();
+          
+          // Set room to both controller and selectedRoom
+          selectedRoom = data['roomName'];
+          if (selectedRoom != null) {
+            roomController.text = selectedRoom!;
+          }
+          
+          deviceType = data['deviceType'] ?? 'Light';
+          selectedIcon = _getIconFromCodePoint(data['icon'] ?? Icons.device_hub.codePoint);
+          
+          // Always set relay value regardless of device type
+          socketController.text = data['relay'] ?? '';
 
-        if (data['startTime'] != null) {
-          final stParts = (data['startTime'] as String).split(':');
-          startTime = TimeOfDay(hour: int.parse(stParts[0]), minute: int.parse(stParts[1]));
-        }
-        if (data['endTime'] != null) {
-          final etParts = (data['endTime'] as String).split(':');
-          endTime = TimeOfDay(hour: int.parse(etParts[0]), minute: int.parse(etParts[1]));
-        }
+          if (data['startTime'] != null) {
+            try {
+              final stParts = (data['startTime'] as String).split(':');
+              startTime = TimeOfDay(hour: int.parse(stParts[0]), minute: int.parse(stParts[1]));
+            } catch (e) {
+              print("Error parsing start time: $e");
+            }
+          }
+          
+          if (data['endTime'] != null) {
+            try {
+              final etParts = (data['endTime'] as String).split(':');
+              endTime = TimeOfDay(hour: int.parse(etParts[0]), minute: int.parse(etParts[1]));
+            } catch (e) {
+              print("Error parsing end time: $e");
+            }
+          }
 
-        final daysList = List<String>.from(data['days'] ?? []);
-        selectedDays.forEach((key, value) {
-          selectedDays[key] = daysList.contains(key);
+          final daysList = List<String>.from(data['days'] ?? []);
+          selectedDays.forEach((key, value) {
+            selectedDays[key] = daysList.contains(key);
+          });
+          
+          // Loading complete
+          _isLoading = false;
         });
-      });
-    } else {
-      print("Error: Could not load appliance data for editing.");
-      // Handle error, maybe pop screen or show message
+      } else {
+        print("Error: Could not load appliance data for editing.");
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text("Could not load device data for ID: $applianceId"))
+          );
+          Navigator.of(context).pop();
+        }
+      }
+    } catch (e) {
+      print("Error fetching appliance data: $e");
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text("Could not load device data for ID: $applianceId"))
+          SnackBar(content: Text("Error loading device data: ${e.toString()}"))
         );
         Navigator.of(context).pop();
       }
     }
   }
 
-
   @override
   Widget build(BuildContext context) {
-    // Main scaffold and form structure (largely similar to AddDeviceScreen)
-    // ... (Keep the existing build method structure from Schedule.dart)
-    // Replace _buildRequiredTextField calls if they were different from AddDeviceScreen
-    // Ensure all controllers and state variables are used correctly.
-    // The submit button will call _validateAndSubmitDevice
-     return Scaffold(
+    // Show loading indicator while data is loading
+    if (_isLoading) {
+      return Scaffold(
+        backgroundColor: const Color(0xFFE9E7E6),
+        body: Center(child: CircularProgressIndicator()),
+      );
+    }
+    
+    return Scaffold(
       backgroundColor: const Color(0xFFE9E7E6),
       appBar: null,
       body: SafeArea(
@@ -166,9 +206,9 @@ class ScheduleState extends State<Schedule> {
                   ),
 
                   Transform.translate(
-                    offset: Offset(-50, -30), // Adjusted to match AddDeviceScreen if needed
+                    offset: Offset(-50, -30),
                     child: Text(
-                      isEditing ? 'Edit Schedule' : 'Set Schedule', // Title reflects purpose
+                      isEditing ? 'Edit Schedule' : 'Set Schedule',
                       textAlign: TextAlign.center,
                       style: GoogleFonts.jaldi(
                         textStyle: TextStyle(fontSize: 23, fontWeight: FontWeight.bold),
@@ -204,65 +244,43 @@ class ScheduleState extends State<Schedule> {
                   ),
 
                   _buildRequiredTextField(
-                    kwhController,
-                    "KWH", // Changed from KWPH for consistency
+                    wattageController,
+                    "Wattage",
                     Icons.energy_savings_leaf,
                     keyboardType: TextInputType.number,
-                    errorText: kwhError
+                    errorText: wattageError
                   ),
 
                   SizedBox(height: 10),
 
-                  Row(
-                    children: [
-                      Expanded(
-                        child: DropdownButtonFormField<String>(
-                          decoration: InputDecoration(
-                            filled: true,
-                            fillColor: Colors.white,
-                            prefixIcon: Icon(
-                              selectedRoom != null ? (roomIcons[selectedRoom] ?? Icons.home) : Icons.home,
-                              size: 30,
-                              color: Colors.black
-                            ),
-                            labelText: 'Room',
-                            labelStyle: GoogleFonts.jaldi(
-                              textStyle: TextStyle(fontSize: 20),
-                              color: Colors.black,
-                            ),
-                            border: OutlineInputBorder(),
-                            errorText: roomError,
-                          ),
-                          dropdownColor: Colors.grey[200],
-                          style: GoogleFonts.jaldi(
-                            textStyle: TextStyle(fontSize: 18, color: Colors.black87),
-                          ),
-                          value: selectedRoom,
-                          items: rooms.map((room) {
-                            return DropdownMenuItem(
-                              value: room,
-                              child: Text(room),
-                            );
-                          }).toList(),
-                          onChanged: (value) {
-                            setState(() {
-                              selectedRoom = value;
-                              roomError = null;
-                            });
-                          },
-                          validator: (value) {
-                            if (value == null || value.isEmpty) {
-                              return "Room is required";
-                            }
-                            return null;
-                          },
-                        ),
+                  // Room input as TextFormField instead of dropdown to avoid assertion errors
+                  TextFormField(
+                    controller: roomController,
+                    decoration: InputDecoration(
+                      filled: true,
+                      fillColor: Colors.white,
+                      prefixIcon: Icon(Icons.home, size: 30, color: Colors.black),
+                      labelText: 'Room',
+                      labelStyle: GoogleFonts.jaldi(
+                        textStyle: TextStyle(fontSize: 20),
+                        color: Colors.grey[700],
                       ),
-                      IconButton(
-                        icon: Icon(Icons.add, size: 30, color: Colors.black),
-                        onPressed: _addRoomDialog,
-                      )
-                    ],
+                      hintText: "Enter room name",
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                      errorText: roomError,
+                    ),
+                    onChanged: (value) {
+                      setState(() {
+                        selectedRoom = value;
+                        roomError = null;
+                      });
+                    },
+                    validator: (value) {
+                      if (value == null || value.isEmpty) {
+                        return "Room is required";
+                      }
+                      return null;
+                    },
                   ),
 
                   SizedBox(height: 15),
@@ -284,7 +302,7 @@ class ScheduleState extends State<Schedule> {
                       textStyle: TextStyle(fontSize: 18, color: Colors.black87),
                     ),
                     value: deviceType,
-                    items: ['Light', 'Socket'].map((type) { // Add other types if necessary
+                    items: ['Light', 'Socket'].map((type) {
                       return DropdownMenuItem(
                         value: type,
                         child: Text(type),
@@ -293,24 +311,19 @@ class ScheduleState extends State<Schedule> {
                     onChanged: (value) {
                       setState(() {
                         deviceType = value!;
-                        if (deviceType == 'Light') {
-                          socketError = null; // Clear socket error if type changes to Light
-                          socketController.clear(); // Clear relay controller
-                        }
                       });
                     },
                   ),
 
-                  if (deviceType == 'Socket') ...[
-                    SizedBox(height: 5),
-                    _buildRequiredTextField( // Using the same text field builder
-                      socketController,
-                      "Relay Name", // Changed label to Relay Name
-                      Icons.electrical_services,
-                      hint: "Enter relay identifier",
-                      errorText: socketError
-                    ),
-                  ],
+                  // Required relay for all device 
+                  SizedBox(height: 5),
+                  _buildRequiredTextField(
+                    socketController,
+                    "Relay Name",
+                    Icons.electrical_services,
+                    hint: "Enter relay identifier",
+                    errorText: socketError
+                  ),
 
                   SizedBox(height: 10),
 
@@ -333,7 +346,7 @@ class ScheduleState extends State<Schedule> {
                                 title: Text(
                                   startTime != null
                                       ? 'Start: \n${startTime!.format(context)}'
-                                      : 'Set Start Time *',
+                                      : 'Set Start Time', 
                                 ),
                                 onTap: () => _pickStartTime(),
                               ),
@@ -345,7 +358,7 @@ class ScheduleState extends State<Schedule> {
                                 title: Text(
                                   endTime != null
                                       ? 'End: \n${endTime!.format(context)}'
-                                      : 'Set End Time *',
+                                      : 'Set End Time', 
                                 ),
                                 onTap: () => _pickEndTime(),
                               ),
@@ -401,6 +414,7 @@ class ScheduleState extends State<Schedule> {
                     ),
                   ),
 
+                 // rep days
                   Padding(
                     padding: const EdgeInsets.symmetric(vertical: 8.0),
                     child: Column(
@@ -418,7 +432,7 @@ class ScheduleState extends State<Schedule> {
                             if (daysError != null)
                               Padding(
                                 padding: const EdgeInsets.only(left: 8.0),
-                                child: Text(daysError!, style: TextStyle(color: Colors.red, fontSize: 12)), // Show error next to title
+                                child: Text(daysError!, style: TextStyle(color: Colors.red, fontSize: 12)),
                               ),
                           ],
                         ),
@@ -432,19 +446,16 @@ class ScheduleState extends State<Schedule> {
                                 child: FilterChip(
                                   label: Text(day),
                                   labelStyle: TextStyle(
-                                    color: selectedDays[day] ?? false ? Colors.white : Colors.black, // Text color based on selection
+                                    color: selectedDays[day] ?? false ? Colors.white : Colors.black,
                                   ),
                                   selected: selectedDays[day] ?? false,
                                   onSelected: (selected) {
                                     setState(() {
                                       selectedDays[day] = selected;
-                                      if (selectedDays.values.any((s) => s)) { // Clear error if any day is selected
-                                        daysError = null;
-                                      }
                                     });
                                   },
-                                  backgroundColor: Colors.grey[300], // Neutral background
-                                  selectedColor: Colors.black, // Selected color
+                                  backgroundColor: Colors.grey[300],
+                                  selectedColor: Colors.black,
                                   checkmarkColor: Colors.white,
                                   side: BorderSide(
                                     color: daysError != null && !(selectedDays[day] ?? false) ? Colors.red : Colors.grey,
@@ -459,7 +470,7 @@ class ScheduleState extends State<Schedule> {
                     ),
                   ),
 
-                  SizedBox(height: 20), // Added space before button
+                  SizedBox(height: 20),
 
                   ElevatedButton(
                     onPressed: _validateAndSubmitDevice,
@@ -468,16 +479,16 @@ class ScheduleState extends State<Schedule> {
                       backgroundColor: Colors.white,
                       foregroundColor: Colors.black,
                       shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(0), // Square corners
+                        borderRadius: BorderRadius.circular(0),
                         side: BorderSide(color: Colors.black, width: 1),
                       ),
                       elevation: 5,
                       shadowColor: Colors.black.withOpacity(0.5),
                     ),
                     child: Text(
-                      isEditing ? 'Save Changes' : 'Add Device with Schedule', // Clarified button text
+                      isEditing ? 'Save Changes' : 'Add Device with Schedule',
                       style: GoogleFonts.judson(
-                        fontSize: 20, // Adjusted font size
+                        fontSize: 20,
                         color: Colors.black,
                       ),
                     ),
@@ -491,7 +502,6 @@ class ScheduleState extends State<Schedule> {
     );
   }
 
-  // Helper for text fields (can be copied from AddDeviceScreen or defined here)
   Widget _buildRequiredTextField(
     TextEditingController controller,
     String label,
@@ -512,10 +522,10 @@ class ScheduleState extends State<Schedule> {
           labelText: label,
           labelStyle: GoogleFonts.jaldi(
             textStyle: TextStyle(fontSize: 20),
-            color: Colors.grey[700], // Darker grey for label
+            color: Colors.grey[700],
           ),
           hintText: hint,
-          border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)), // Slightly rounded border
+          border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
           errorText: errorText,
           focusedBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(8),
@@ -535,112 +545,25 @@ class ScheduleState extends State<Schedule> {
     );
   }
 
-  // _addRoomDialog, _pickIcon, _applyPresetTime, _pickStartTime, _pickEndTime
-  // can be copied from AddDeviceScreen or kept if they are identical.
-  // For brevity, assuming they are similar and focusing on _validateAndSubmitDevice.
-
-  void _addRoomDialog() {
-    TextEditingController roomInput = TextEditingController();
-    IconData newRoomIcon = Icons.home; // Default icon for new room
-
-    showDialog(
-      context: context,
-      builder: (_) => AlertDialog(
-        backgroundColor: const Color(0xFFE9E7E6),
-        title: Text('Add New Room', style: GoogleFonts.jaldi(fontWeight: FontWeight.bold, color: Colors.black)),
-        content: StatefulBuilder( // Use StatefulBuilder to update icon selection within dialog
-          builder: (BuildContext context, StateSetter setDialogState) {
-            return SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  TextField(
-                    controller: roomInput,
-                    decoration: InputDecoration(
-                      hintText: "Enter room name",
-                      prefixIcon: Icon(newRoomIcon, color: Colors.black),
-                      filled: true,
-                      fillColor: Colors.white,
-                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                    ),
-                  ),
-                  SizedBox(height: 15),
-                  Text("Select Icon:", style: GoogleFonts.jaldi(fontWeight: FontWeight.bold)),
-                  SizedBox(height: 8),
-                  SizedBox(
-                     height: 150, // Adjust height as needed
-                     width: double.maxFinite,
-                     child: GridView.count(
-                      crossAxisCount: 4,
-                      shrinkWrap: true,
-                      children: [
-                        Icons.living, Icons.bed, Icons.kitchen, Icons.dining,
-                        Icons.bathroom, Icons.meeting_room, Icons.workspace_premium, Icons.chair,
-                        Icons.stairs, Icons.garage, Icons.yard, Icons.balcony,
-                      ].map((icon) {
-                        return IconButton(
-                          icon: Icon(icon, color: newRoomIcon == icon ? Theme.of(context).primaryColor : Colors.black),
-                          onPressed: () {
-                            setDialogState(() { // Use setDialogState to update the icon in the dialog
-                              newRoomIcon = icon;
-                            });
-                          },
-                        );
-                      }).toList(),
-                    ),
-                  )
-                ],
-              ),
-            );
-          }
-        ),
-        actions: [
-          TextButton(
-            child: Text('Cancel', style: GoogleFonts.jaldi(color: Colors.black54)),
-            onPressed: () => Navigator.of(context).pop(),
-          ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.black),
-            child: Text('Add Room', style: GoogleFonts.jaldi(color: Colors.white)),
-            onPressed: () {
-              if (roomInput.text.isNotEmpty) {
-                setState(() {
-                  String newRoomName = roomInput.text;
-                  if (!rooms.contains(newRoomName)) {
-                    rooms.add(newRoomName);
-                    roomIcons[newRoomName] = newRoomIcon; // Store selected icon
-                  }
-                  selectedRoom = newRoomName; // Select the newly added room
-                  roomError = null;
-                });
-              }
-              Navigator.of(context).pop();
-            },
-          ),
-        ],
-      ),
-    );
-  }
-
   void _pickIcon() {
     showModalBottomSheet(
       context: context,
       backgroundColor: const Color(0xFFE9E7E6),
-      builder: (_) => Container( // Added container for padding
+      builder: (_) => Container(
         padding: EdgeInsets.all(12),
         child: GridView.count(
           crossAxisCount: 4,
           shrinkWrap: true,
-          children: <IconData>[ // Explicitly type the list
+          children: const <IconData>[
             Icons.lightbulb_outline, Icons.tv_outlined, Icons.power_outlined, Icons.kitchen_outlined,
             Icons.speaker_group_outlined, Icons.laptop_chromebook_outlined, Icons.ac_unit_outlined, Icons.microwave_outlined,
-            Icons.router_outlined, Icons.videogame_asset_outlined, Icons.local_laundry_service_outlined, Icons.air_outlined, // Changed fan_outlined
-          ].map<Widget>((IconData icon) { // Explicitly type icon in map
+            Icons.router_outlined, Icons.videogame_asset_outlined, Icons.local_laundry_service_outlined, Icons.air_outlined,
+          ].map<Widget>((IconData icon) {
             return IconButton(
               icon: Icon(icon, color: Colors.black, size: 30),
               onPressed: () {
                 setState(() {
-                  selectedIcon = icon; // Now icon is IconData
+                  selectedIcon = icon;
                 });
                 Navigator.pop(context);
               },
@@ -669,11 +592,7 @@ class ScheduleState extends State<Schedule> {
     if (picked != null) {
       setState(() {
         startTime = picked;
-        if (endTime != null && startTime!.hour > endTime!.hour || (startTime!.hour == endTime!.hour && startTime!.minute >= endTime!.minute)) {
-            timeError = "Start time must be before end time";
-        } else {
-            timeError = null;
-        }
+        timeError = null;
       });
     }
   }
@@ -686,47 +605,49 @@ class ScheduleState extends State<Schedule> {
     if (picked != null) {
       setState(() {
         endTime = picked;
-         if (startTime != null && startTime!.hour > endTime!.hour || (startTime!.hour == endTime!.hour && startTime!.minute >= endTime!.minute)) {
-            timeError = "End time must be after start time";
-        } else {
-            timeError = null;
-        }
+        timeError = null;
       });
     }
   }
 
-
   void _validateAndSubmitDevice() {
     bool isValid = true;
-    setState(() { // Reset errors
-      applianceNameError = null; kwhError = null; roomError = null;
-      socketError = null; timeError = null; daysError = null;
+    setState(() {
+      applianceNameError = null;
+      wattageError = null;
+      roomError = null;
+      socketError = null;
+      timeError = null;
+      daysError = null;
     });
 
     if (applianceNameController.text.isEmpty) {
-      applianceNameError = "Appliance name is required"; isValid = false;
+      setState(() { applianceNameError = "Appliance name is required"; });
+      isValid = false;
     }
-    if (kwhController.text.isEmpty) {
-      kwhError = "KWH is required"; isValid = false;
-    } else if (double.tryParse(kwhController.text) == null) {
-      kwhError = "Invalid KWH value"; isValid = false;
+    
+    if (wattageController.text.isEmpty) {
+      setState(() { wattageError = "Wattage is required"; });
+      isValid = false;
+    } else if (double.tryParse(wattageController.text) == null) {
+      setState(() { wattageError = "Invalid Wattage value"; });
+      isValid = false;
     }
-    if (selectedRoom == null) {
-      roomError = "Room is required"; isValid = false;
+    
+    if (roomController.text.isEmpty) {
+      setState(() { roomError = "Room is required"; });
+      isValid = false;
+    } else {
+      // Make sure selectedRoom is set from controller
+      selectedRoom = roomController.text;
     }
-    if (deviceType == 'Socket' && socketController.text.isEmpty) {
-      socketError = "Relay name is required for Socket type"; isValid = false;
-    }
-    if (startTime == null || endTime == null) {
-      timeError = "Start and end times are required"; isValid = false;
-    } else if (startTime!.hour > endTime!.hour || (startTime!.hour == endTime!.hour && startTime!.minute >= endTime!.minute)) {
-        timeError = "End time must be after start time"; isValid = false;
-    }
-    if (!selectedDays.values.any((selected) => selected)) {
-      daysError = "At least one day must be selected"; isValid = false;
+    
+    if (socketController.text.isEmpty) {
+      setState(() { socketError = "Relay name is required"; });
+      isValid = false;
     }
 
-    setState(() {}); // Trigger UI update for error messages
+    
 
     if (isValid) {
       _submitDeviceToFirestore();
@@ -735,24 +656,18 @@ class ScheduleState extends State<Schedule> {
 
   Future<void> _submitDeviceToFirestore() async {
     final Map<String, dynamic> firestoreData = {
-      'applianceName': applianceNameController.text,
+      'applianceName': applianceNameController.text.trim(),
       'deviceType': deviceType,
-      'kwh': double.tryParse(kwhController.text) ?? 0.0,
+      'wattage': double.tryParse(wattageController.text) ?? 0.0,
       'roomName': selectedRoom!,
       'icon': selectedIcon.codePoint,
       'startTime': startTime != null ? "${startTime!.hour.toString().padLeft(2, '0')}:${startTime!.minute.toString().padLeft(2, '0')}" : null,
       'endTime': endTime != null ? "${endTime!.hour.toString().padLeft(2, '0')}:${endTime!.minute.toString().padLeft(2, '0')}" : null,
       'days': selectedDays.entries.where((entry) => entry.value).map((entry) => entry.key).toList(),
-      // Preserve existing status and usage if editing, otherwise set defaults
+      'relay': socketController.text.trim(), // Always include relay for all device types
       'applianceStatus': isEditing ? (_initialApplianceData?['applianceStatus'] ?? 'OFF') : 'OFF',
       'presentHourlyusage': isEditing ? (_initialApplianceData?['presentHourlyusage'] ?? 0.0) : 0.0,
     };
-
-    if (deviceType == 'Socket') {
-      firestoreData['relay'] = socketController.text;
-    } else {
-      firestoreData['relay'] = null; // Ensure relay is null for non-socket types
-    }
 
     try {
       if (isEditing && editingApplianceId != null) {
@@ -776,4 +691,43 @@ class ScheduleState extends State<Schedule> {
       }
     }
   }
+}
+
+IconData _getIconFromCodePoint(int codePoint) {
+  final Map<int, IconData> iconMap = {
+    Icons.light.codePoint: Icons.light,
+    Icons.tv.codePoint: Icons.tv,
+    Icons.power.codePoint: Icons.power,
+    Icons.kitchen.codePoint: Icons.kitchen,
+    Icons.speaker.codePoint: Icons.speaker,
+    Icons.laptop.codePoint: Icons.laptop,
+    Icons.ac_unit.codePoint: Icons.ac_unit,
+    Icons.microwave.codePoint: Icons.microwave,
+    Icons.coffee_maker.codePoint: Icons.coffee_maker,
+    Icons.radio_button_checked.codePoint: Icons.radio_button_checked,
+    Icons.thermostat.codePoint: Icons.thermostat,
+    Icons.doorbell.codePoint: Icons.doorbell,
+    Icons.camera.codePoint: Icons.camera,
+    Icons.sensor_door.codePoint: Icons.sensor_door,
+    Icons.lock.codePoint: Icons.lock,
+    Icons.door_sliding.codePoint: Icons.door_sliding,
+    Icons.local_laundry_service.codePoint: Icons.local_laundry_service,
+    Icons.dining.codePoint: Icons.dining,
+    Icons.rice_bowl.codePoint: Icons.rice_bowl,
+    Icons.wind_power.codePoint: Icons.wind_power,
+    Icons.router.codePoint: Icons.router,
+    Icons.outdoor_grill.codePoint: Icons.outdoor_grill,
+    Icons.air.codePoint: Icons.air,
+    Icons.alarm.codePoint: Icons.alarm,
+    Icons.living.codePoint: Icons.living,
+    Icons.bed.codePoint: Icons.bed,
+    Icons.bathroom.codePoint: Icons.bathroom,
+    Icons.meeting_room.codePoint: Icons.meeting_room,
+    Icons.garage.codePoint: Icons.garage,
+    Icons.local_library.codePoint: Icons.local_library,
+    Icons.stairs.codePoint: Icons.stairs,
+    Icons.devices.codePoint: Icons.devices,
+    Icons.home.codePoint: Icons.home,
+  };
+  return iconMap[codePoint] ?? Icons.devices;
 }

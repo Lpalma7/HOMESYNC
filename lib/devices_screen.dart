@@ -1,17 +1,20 @@
 import 'package:flutter/material.dart';
 import 'package:homesync/adddevices.dart';
 import 'package:homesync/notification_screen.dart';
-// import 'package:weather/weather.dart'; // Weather not implemented yet
+import 'package:weather/weather.dart'; // Added weather import
 import 'package:homesync/welcome_screen.dart';
 import 'package:homesync/relay_state.dart'; // Re-adding for relay state management
 import 'package:homesync/databaseservice.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:homesync/usage.dart'; // Import UsageTracker
 import 'dart:async';
 import 'dart:math'; // For min function
 import 'package:firebase_auth/firebase_auth.dart'; // Added import for FirebaseAuth
 import 'package:cloud_firestore/cloud_firestore.dart'; // For QueryDocumentSnapshot
 
-// import 'package:homesync/room_data_manager.dart'; // RoomDataManager might need update or be replaced by DatabaseService
+// TODO: Replace 'YOUR_API_KEY' with your actual OpenWeatherMap API key
+const String _apiKey = 'YOUR_API_KEY'; // Placeholder for Weather API Key
+const String _cityName = 'Manila'; // Default city for weather
 
 class DevicesScreen extends StatefulWidget {
   const DevicesScreen({super.key});
@@ -21,23 +24,113 @@ class DevicesScreen extends StatefulWidget {
 }
 
 class DevicesScreenState extends State<DevicesScreen> {
-  // Weather? currentWeather; // Weather not implemented
+  Weather? _currentWeather; // Added weather state variable
   int _selectedIndex = 1;
   final DatabaseService _dbService = DatabaseService();
   StreamSubscription? _appliancesSubscription;
 
   List<QueryDocumentSnapshot<Map<String, dynamic>>> _devices = []; // To store appliance documents
+  List<QueryDocumentSnapshot<Map<String, dynamic>>> _filteredDevices = []; // To store filtered devices
+  final TextEditingController _searchController = TextEditingController(); // Search controller
+  String _searchQuery = ''; // Current search query
 
   // Local state for master power button visual, true if it's in "ON" commanding mode
   bool _masterPowerButtonState = false;
 
+  // UsageService instance
+  UsageService? _usageService;
+
+  // Method to get username from Firestore
+  Future<String> getCurrentUsername() async {
+    try {
+      final user = FirebaseAuth.instance.currentUser;
+      if (user != null) {
+        DocumentSnapshot userDoc = await FirebaseFirestore.instance
+            .collection('users')
+            .doc(user.uid)
+            .get();
+        
+        if (userDoc.exists) {
+          Map<String, dynamic> userData = userDoc.data() as Map<String, dynamic>;
+          return userData['username'] ?? ' ';
+        }
+      }
+      return ' ';
+    } catch (e) {
+      print('Error fetching username: $e');
+      return ' ';
+    }
+  }
+
+  // Added weather fetching method
+  Future<void> _fetchWeather() async {
+    if (_apiKey == 'YOUR_API_KEY') {
+      print("Weather API key is a placeholder. Please replace it.");
+      if (mounted) {
+        setState(() {
+          // Keep _currentWeather as null to show placeholder
+        });
+      }
+      return;
+    }
+    WeatherFactory wf = WeatherFactory(_apiKey);
+    try {
+      Weather w = await wf.currentWeatherByCityName(_cityName);
+      if (mounted) {
+        setState(() {
+          _currentWeather = w;
+        });
+      }
+    } catch (e) {
+      print("Failed to fetch weather: $e");
+      if (mounted) {
+        // Handle weather fetch error, e.g., show a default or error message
+      }
+    }
+  }
+
+  // Search filtering method
+  void _filterDevices() {
+    setState(() {
+      if (_searchQuery.isEmpty) {
+        _filteredDevices = List.from(_devices);
+      } else {
+        _filteredDevices = _devices.where((deviceDoc) {
+          final deviceData = deviceDoc.data();
+          final String applianceName = (deviceData['applianceName'] as String? ?? '').toLowerCase();
+          final String roomName = (deviceData['roomName'] as String? ?? '').toLowerCase();
+          final String deviceType = (deviceData['deviceType'] as String? ?? '').toLowerCase();
+          final String searchLower = _searchQuery.toLowerCase();
+          
+          return applianceName.contains(searchLower) ||
+                 roomName.contains(searchLower) ||
+                 deviceType.contains(searchLower);
+        }).toList();
+      }
+    });
+  }
+
+  // Search query update method
+  void _updateSearchQuery(String query) {
+    _searchQuery = query;
+    _filterDevices();
+  }
 
   @override
   void initState() {
     super.initState();
+    _usageService = UsageService(); // Initialize UsageService
+    _fetchWeather(); // Fetch weather data
     _listenToAppliances();
     _listenForRelayStateChanges();
     _updateMasterPowerButtonVisualState();
+
+    // Initialize search controller listener
+    _searchController.addListener(() {
+      _updateSearchQuery(_searchController.text);
+    });
+
+    // User authentication check is handled within methods that need userId.
   }
 
   void _listenForRelayStateChanges() {
@@ -62,6 +155,8 @@ class DevicesScreenState extends State<DevicesScreen> {
               if (data['state'] != null) {
                 setState(() {
                   RelayState.relayStates[relay] = data['state'] as int;
+                  // Also read the irControlled flag
+                  RelayState.irControlledStates[relay] = data['irControlled'] as bool? ?? false;
                 });
               }
             }
@@ -96,6 +191,7 @@ class DevicesScreenState extends State<DevicesScreen> {
       print("User not authenticated. Cannot fetch appliances.");
       setState(() {
         _devices = [];
+        _filteredDevices = [];
       });
       return;
     }
@@ -113,6 +209,8 @@ class DevicesScreenState extends State<DevicesScreen> {
         setState(() {
           // Get all devices from Firestore
           _devices = snapshot.docs;
+          // Apply current search filter
+          _filterDevices();
 
           print("Found ${_devices.length} devices from Firestore");
           print("Device fields: applianceName, applianceStatus, deviceType, icon, roomName");
@@ -130,6 +228,7 @@ class DevicesScreenState extends State<DevicesScreen> {
       if (mounted) {
         setState(() {
           _devices = [];
+          _filteredDevices = [];
         });
       }
     });
@@ -153,6 +252,7 @@ class DevicesScreenState extends State<DevicesScreen> {
   @override
   void dispose() {
     _appliancesSubscription?.cancel();
+    _searchController.dispose(); // Dispose search controller
     super.dispose();
   }
 
@@ -191,7 +291,7 @@ class DevicesScreenState extends State<DevicesScreen> {
                 .doc(userUid)
                 .collection('relay_states')
                 .doc(relayKey)
-                .set({'state': 0})
+                .update({'state': 0}) // Use update instead of set
           );
         }
 
@@ -233,6 +333,48 @@ class DevicesScreenState extends State<DevicesScreen> {
       return;
     }
 
+    // Get the relay associated with this appliance using applianceName
+    final deviceDoc = _devices.firstWhere((doc) => doc.data()['applianceName'] == applianceName);
+    final deviceData = deviceDoc.data();
+    final String relayKey = deviceData['relay'] as String? ?? '';
+
+    // Check if the relay is currently IR controlled AND the user is trying to turn it OFF
+    if (RelayState.irControlledStates[relayKey] == true && currentStatus == 'ON') {
+       // Show confirmation dialog
+       bool confirmTurnOff = await showDialog(
+         context: context,
+         builder: (BuildContext context) {
+           return AlertDialog(
+             title: Text("Confirm Turn Off"),
+             content: Text("This device is currently controlled by IR. Do you want to force it OFF?"),
+             actions: <Widget>[
+               TextButton(
+                 child: Text("Cancel"),
+                 onPressed: () {
+                   Navigator.of(context).pop(false); // Return false on cancel
+                 },
+               ),
+               TextButton(
+                 child: Text("Turn Off"),
+                 onPressed: () {
+                   Navigator.of(context).pop(true); // Return true on confirm
+                 },
+               ),
+             ],
+           );
+         },
+       ) ?? false; // Default to false if dialog is dismissed
+
+       if (!confirmTurnOff) {
+         return; // If user cancels, do not proceed
+       }
+       // If user confirms, proceed to turn off
+    } else if (RelayState.irControlledStates[relayKey] == true && currentStatus == 'OFF') {
+        // If IR is controlling and the device is already OFF, allow toggling ON
+        // No confirmation needed in this case based on the prompt
+    }
+
+
     final newStatus = currentStatus == 'ON' ? 'OFF' : 'ON';
     try {
       print("Toggling device $applianceName from $currentStatus to $newStatus");
@@ -256,7 +398,7 @@ class DevicesScreenState extends State<DevicesScreen> {
             .doc(userUid)
             .collection('relay_states')
             .doc(relayKey)
-            .set({'state': newRelayState});
+            .update({'state': newRelayState});
       }
 
       // Update appliance status in Firestore directly using the document ID
@@ -269,6 +411,28 @@ class DevicesScreenState extends State<DevicesScreen> {
           .update({'applianceStatus': newStatus});
 
       print("Device $applianceName toggled successfully");
+
+      // Record usage time after successful toggle
+      final userUid = FirebaseAuth.instance.currentUser!.uid;
+      final applianceId = deviceDoc.id;
+      final double wattage = (deviceData['wattage'] is num) ? (deviceData['wattage'] as num).toDouble() : 0.0; // Fetch wattage
+
+      // Fetch user's kWh rate
+      DocumentSnapshot userSnap = await FirebaseFirestore.instance.collection('users').doc(userUid).get();
+      double kwhrRate = DEFAULT_KWHR_RATE; // Use default from usage.dart
+      if (userSnap.exists && userSnap.data() != null) {
+          kwhrRate = ((userSnap.data() as Map<String,dynamic>)['kwhr'] as num?)?.toDouble() ?? DEFAULT_KWHR_RATE;
+      }
+
+      // Call UsageService to handle the toggle
+      await _usageService?.handleApplianceToggle(
+        userId: userUid,
+        applianceId: applianceId,
+        isOn: newStatus == 'ON',
+        wattage: wattage,
+        kwhrRate: kwhrRate,
+      );
+
     } catch (e) {
       print("Error toggling device $applianceName: $e");
       if (mounted) {
@@ -278,7 +442,6 @@ class DevicesScreenState extends State<DevicesScreen> {
       }
     }
   }
-
 
   @override
   Widget build(BuildContext context) {
@@ -301,144 +464,217 @@ class DevicesScreenState extends State<DevicesScreen> {
           padding: const EdgeInsets.all(16.0),
           child: Column(
             children: [
-              // Profile + Home Text + Flyout
-              GestureDetector(
-                onTap: () => _showFlyout(context),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.center,
-                  children: [
-                    const Padding(
-                      padding: EdgeInsets.only(top: 20),
-                      child: CircleAvatar(
-                        backgroundColor: Colors.grey,
-                        radius: 25,
-                        child: Icon(Icons.person, color: Colors.black, size: 35),
-                      ),
-                    ),
-                    const SizedBox(width: 10),
-                    const Padding(
-                      padding: EdgeInsets.only(top: 20),
-                      child: Text(
-                        'My Home',
-                        style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              // Weather Info (Placeholder)
-              Transform.translate(
-                offset: const Offset(195, -50),
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                  decoration: BoxDecoration(
-                    color: Colors.transparent,
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                  child: Row(
-                    children: [
-                      const Icon(Icons.cloud_circle_sharp, size: 35, color: Colors.lightBlue),
-                      const SizedBox(width: 4),
-                      Text(
-                        '27°C', // Placeholder
-                        style: GoogleFonts.inter(fontSize: 16),
-                      ),
-                      Transform.translate(
-                        offset: const Offset(-45, 16),
-                        child: Text(
-                          "Today's Weather",
-                          style: GoogleFonts.inter(color: Colors.grey, fontSize: 11),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-              // Navigation Tabs
-              Transform.translate(
-                offset: const Offset(-5, -20),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                  children: [
-                    _buildNavButton('Electricity', _selectedIndex == 0, 0),
-                    _buildNavButton('Devices', _selectedIndex == 1, 1),
-                    _buildNavButton('Rooms', _selectedIndex == 2, 2),
-                  ],
-                ),
-              ),
-              Transform.translate(
-                offset: const Offset(-1, -20),
-                child: const SizedBox(
-                  width: 1000,
-                  child: Divider(
-                    height: 1,
-                    thickness: 1,
-                    color: Colors.black38,
-                  ),
-                ),
-              ),
-              Expanded(
-                child: Column(
-                  children: [
-                    const SizedBox(height: 1),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              // Updated header section to match homepage design
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  GestureDetector(
+                    onTap: () => _showFlyout(context),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.center,
                       children: [
-                        Expanded(
-                          child: SizedBox(
-                            height: 47,
-                            child: TextField(
-                              decoration: InputDecoration(
-                                hintText: 'Search',
-                                prefixIcon: const Icon(Icons.search),
-                                filled: true,
-                                fillColor: Color(0xFFD9D9D9),
-                                border: OutlineInputBorder(
-                                  borderRadius: BorderRadius.circular(30),
-                                  borderSide: BorderSide(
-                                    color: Colors.grey,
-                                    width: 1.5,
-                                  ),
-                                ),
-                              ),
-                            ),
+                        Transform.translate(
+                          offset: Offset(0, 20),
+                          child: CircleAvatar(
+                            backgroundColor: Colors.grey,
+                            radius: 25,
+                            child: Icon(Icons.home, color: Colors.black, size: 35),
                           ),
                         ),
-                        Padding(
-                          padding: const EdgeInsets.only(left: 8.0),
-                          child: Container(
-                            decoration: BoxDecoration(
-                              color: RelayState.relayStates['relay10'] == 1 ? Colors.black : Colors.grey, // Use relay10 state
-                              borderRadius: BorderRadius.circular(24),
-                            ),
-                            child: IconButton(
-                              icon: Icon(
-                                Icons.power_settings_new,
-                                color: Colors.white,
-                                size: 28,
-                              ),
-                              onPressed: _toggleMasterPower,
-                              tooltip: 'Master Power',
+                        SizedBox(width: 10),
+                        Transform.translate(
+                          offset: Offset(0, 20),
+                          child: SizedBox(
+                            width: 110,
+                            child: FutureBuilder<String>(
+                              future: getCurrentUsername(),
+                              builder: (context, snapshot) {
+                                return Text(
+                                  snapshot.data ?? " ",
+                                  style: TextStyle(
+                                    fontSize: 20,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                );
+                              },
                             ),
                           ),
                         ),
                       ],
                     ),
-                    const SizedBox(height: 25),
-                    Expanded(
-                      child: _devices.isEmpty
-                          ? Center(child: Text("No devices found.", style: GoogleFonts.inter()))
+                  ),
+
+                  // Updated weather section to match homepage
+                  Transform.translate(
+                    offset: Offset(0, 20),
+                    child: Container(
+                      padding: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: Colors.transparent,
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Icon(Icons.cloud_circle_sharp, size: 35, color: Colors.lightBlue),
+                              SizedBox(width: 4),
+                              Transform.translate(
+                                offset: Offset(0, -5),
+                                child: _currentWeather == null
+                                    ? (_apiKey == 'YOUR_API_KEY'
+                                        ? Text('Set API Key', style: GoogleFonts.inter(fontSize: 12))
+                                        : Text('Loading...', style: GoogleFonts.inter(fontSize: 12)))
+                                    : Text(
+                                        '${_currentWeather?.temperature?.celsius?.toStringAsFixed(0) ?? '--'}°C',
+                                        style: GoogleFonts.inter(fontSize: 16),
+                                      ),
+                              ),
+                            ],
+                          ),
+                          Transform.translate(
+                            offset: Offset(40, -15),
+                            child: Text(
+                              _currentWeather?.weatherDescription ?? (_apiKey == 'YOUR_API_KEY' ? 'Weather' : 'Fetching weather...'),
+                              style: GoogleFonts.inter(
+                                color: Colors.grey,
+                                fontSize: 12,
+                              ),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+
+              SizedBox(height: 20),
+
+              // Navigation Tabs
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                children: [
+                  _buildNavButton('Electricity', _selectedIndex == 0, 0),
+                  _buildNavButton('Appliance', _selectedIndex == 1, 1),
+                  _buildNavButton('Rooms', _selectedIndex == 2, 2),
+                ],
+              ),
+
+              SizedBox(
+                width: double.infinity,
+                child: Divider(
+                  height: 1,
+                  thickness: 1,
+                  color: Colors.black38,
+                ),
+              ),
+
+              // UPDATED: Made the entire content area scrollable
+              Expanded(
+                child: GestureDetector(
+                  onTap: () {
+                    
+                    FocusScope.of(context).unfocus();
+                  },
+                  child: SingleChildScrollView(
+                  child: Column(
+                    children: [
+                      const SizedBox(height: 20),
+                      
+                      
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Expanded(
+                            child: SizedBox(
+                              height: 47,
+                              child: TextField(
+                                controller: _searchController,
+                                decoration: InputDecoration(
+                                  hintText: 'Search appliance...',
+                                  hintStyle: TextStyle(fontSize: 16),
+                                  prefixIcon: const Icon(Icons.search),
+                                  suffixIcon: _searchQuery.isNotEmpty
+                                      ? IconButton(
+                                          icon: Icon(Icons.clear),
+                                          onPressed: () {
+                                            _searchController.clear();
+                                          },
+                                        )
+                                      : null,
+                                  filled: true,
+                                  fillColor: Color(0xFFD9D9D9),
+                                  border: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(30),
+                                    borderSide: BorderSide(
+                                      color: Colors.grey,
+                                      width: 1.5,
+                                    ),
+                                  ),
+                                  contentPadding: EdgeInsets.symmetric(vertical: 12, horizontal: 20),
+                                ),
+                                style: TextStyle(fontSize: 16),
+                                onChanged: (value) {
+                                 
+                                },
+                              ),
+                            ),
+                          ),
+                          Padding(
+                            padding: const EdgeInsets.only(left: 8.0),
+                            child: Container(
+                              decoration: BoxDecoration(
+                                color: RelayState.relayStates['relay10'] == 1 ? Colors.black : Colors.grey, // Use relay10 state
+                                borderRadius: BorderRadius.circular(24),
+                              ),
+                              child: IconButton(
+                                icon: Icon(
+                                  Icons.power_settings_new,
+                                  color: Colors.white,
+                                  size: 28,
+                                ),
+                                onPressed: _toggleMasterPower,
+                                tooltip: 'Master Power',
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      
+                      const SizedBox(height: 25),
+                      
+                      // UPDATED: Device grid now uses filtered devices
+                      _filteredDevices.isEmpty
+                          ? SizedBox(
+                              height: 200, 
+                              child: Center(
+                                child: Text(
+                                  _searchQuery.isNotEmpty 
+                                      ? "No devices found matching '$_searchQuery'"
+                                      : "No devices found.",
+                                  style: GoogleFonts.inter(),
+                                  textAlign: TextAlign.center,
+                                )
+                              ),
+                            )
                           : GridView.builder(
-                              physics: const AlwaysScrollableScrollPhysics(),
+                              shrinkWrap: true, 
+                              physics: NeverScrollableScrollPhysics(), 
                               padding: const EdgeInsets.only(bottom: 70),
-                              itemCount: _devices.length,
+                              itemCount: _filteredDevices.length,
                               gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
                                 crossAxisCount: 2,
                                 crossAxisSpacing: 10,
                                 mainAxisSpacing: 10,
                               ),
                               itemBuilder: (context, index) {
-                                final deviceDoc = _devices[index];
+                                final deviceDoc = _filteredDevices[index];
                                 final deviceData = deviceDoc.data();
                                 // Extract all required fields from Firestore
                                 final String applianceName = deviceData['applianceName'] as String? ?? 'Unknown Device';
@@ -488,7 +724,7 @@ class DevicesScreenState extends State<DevicesScreen> {
                                       deviceType: deviceType,
                                       // Pass individual state, but consider master switch for visual
                                       isOn: RelayState.relayStates['relay10'] == 1 && isOn,
-                                      icon: IconData(iconCodePoint, fontFamily: 'MaterialIcons'),
+                                      icon: _getIconFromCodePoint(iconCodePoint),
                                       applianceStatus: applianceStatus, // Pass applianceStatus
                                       masterSwitchIsOn: RelayState.relayStates['relay10'] == 1, // Pass master switch state
                                       applianceId: deviceDoc.id, // Pass applianceId
@@ -497,9 +733,10 @@ class DevicesScreenState extends State<DevicesScreen> {
                                 );
                               },
                             ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
+              ),
               ),
             ],
           ),
@@ -536,20 +773,36 @@ class DevicesScreenState extends State<DevicesScreen> {
                   const SizedBox(height: 60),
                   Row(
                     children: [
-                      const Icon(Icons.account_circle, size: 50, color: Colors.white),
+                      const Icon(Icons.home, size: 50, color: Colors.white),
                       const SizedBox(width: 10),
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                           Text(
-                            _dbService.getCurrentUserId() ?? "User", // Display user ID or name
-                            style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold),
-                          ),
-                          Text(
-                            _auth.currentUser?.email ?? "email@example.com", // Display user email
-                            style: GoogleFonts.inter(color: Colors.white70, fontSize: 14),
-                          ),
-                        ],
+                      Expanded( 
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            // Updated to use FutureBuilder for username
+                            FutureBuilder<String>(
+                              future: getCurrentUsername(),
+                              builder: (context, snapshot) {
+                                return Text(
+                                  snapshot.data ?? "User", // Display username or "User" as fallback
+                                  style: TextStyle(
+                                    color: Colors.white, 
+                                    fontSize: 20, 
+                                    fontWeight: FontWeight.bold
+                                  ),
+                                  overflow: TextOverflow.ellipsis,
+                                  maxLines: 1,
+                                );
+                              },
+                            ),
+                            Text(
+                              _auth.currentUser?.email ?? "email@example.com", // Display user email
+                              style: GoogleFonts.inter(color: Colors.white70, fontSize: 14),
+                              overflow: TextOverflow.ellipsis, 
+                              maxLines: 1, 
+                            ),
+                          ],
+                        ),
                       ),
                     ],
                   ),
@@ -558,7 +811,7 @@ class DevicesScreenState extends State<DevicesScreen> {
                     leading: const Icon(Icons.person, color: Colors.white, size: 35),
                     title: Text('Profile', style: GoogleFonts.inter(color: Colors.white)),
                     onTap: () {
-                       Navigator.pop(context); // Close flyout
+                    
                        Navigator.pushNamed(context, '/profile'); // Navigate to profile
                     }
                   ),
@@ -567,7 +820,7 @@ class DevicesScreenState extends State<DevicesScreen> {
                     leading: const Icon(Icons.notifications, color: Colors.white, size: 35),
                     title: Text('Notification', style: GoogleFonts.inter(color: Colors.white)),
                     onTap: () {
-                      Navigator.pop(context); // Close flyout
+                      
                       Navigator.push(
                         context,
                         MaterialPageRoute(builder: (context) => NotificationScreen()),
@@ -631,12 +884,15 @@ class DevicesScreenState extends State<DevicesScreen> {
           ),
         ),
         if (isSelected)
-          Container(
-            height: 2.5, // Slightly thicker underline
-            width: 60, // Width of underline
+        Transform.translate(
+            offset: const Offset(0, -10),
+          child:Container(
+            height: 2, // Slightly thicker underline
+            width: 70, // Width of underline
             color: Colors.brown[600], // Darker brown
-            margin: const EdgeInsets.only(top: 0), // Closer to text
+            margin: const EdgeInsets.only(top: 1), // Closer to text
           ),
+        ),
       ],
     );
   }
@@ -746,14 +1002,20 @@ class DeviceCard extends StatelessWidget {
           right: 9,
           child: InkWell(
             onTap: () {
-              // Navigate to schedule or edit screen
-              Navigator.pushNamed(
-                context,
-                '/editdevice',
-                arguments: {
-                  'applianceId': applianceId,
-                },
-              );
+              if (applianceStatus == 'ON') {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text("Turn off the appliance before editing.")),
+                );
+              } else {
+                // Navigate to schedule or edit screen
+                Navigator.pushNamed(
+                  context,
+                  '/editdevice',
+                  arguments: {
+                    'applianceId': applianceId,
+                  },
+                );
+              }
             },
             child: Container(
               padding: EdgeInsets.all(4),
@@ -776,3 +1038,42 @@ class DeviceCard extends StatelessWidget {
 
 // Helper for FirebaseAuth instance, if not already available via _dbService
 final FirebaseAuth _auth = FirebaseAuth.instance;
+
+IconData _getIconFromCodePoint(int codePoint) {
+  final Map<int, IconData> iconMap = {
+    Icons.light.codePoint: Icons.light,
+    Icons.tv.codePoint: Icons.tv,
+    Icons.power.codePoint: Icons.power,
+    Icons.kitchen.codePoint: Icons.kitchen,
+    Icons.speaker.codePoint: Icons.speaker,
+    Icons.laptop.codePoint: Icons.laptop,
+    Icons.ac_unit.codePoint: Icons.ac_unit,
+    Icons.microwave.codePoint: Icons.microwave,
+    Icons.coffee_maker.codePoint: Icons.coffee_maker,
+    Icons.radio_button_checked.codePoint: Icons.radio_button_checked,
+    Icons.thermostat.codePoint: Icons.thermostat,
+    Icons.doorbell.codePoint: Icons.doorbell,
+    Icons.camera.codePoint: Icons.camera,
+    Icons.sensor_door.codePoint: Icons.sensor_door,
+    Icons.lock.codePoint: Icons.lock,
+    Icons.door_sliding.codePoint: Icons.door_sliding,
+    Icons.local_laundry_service.codePoint: Icons.local_laundry_service,
+    Icons.dining.codePoint: Icons.dining,
+    Icons.rice_bowl.codePoint: Icons.rice_bowl,
+    Icons.wind_power.codePoint: Icons.wind_power,
+    Icons.router.codePoint: Icons.router,
+    Icons.outdoor_grill.codePoint: Icons.outdoor_grill,
+    Icons.air.codePoint: Icons.air,
+    Icons.alarm.codePoint: Icons.alarm,
+    Icons.living.codePoint: Icons.living,
+    Icons.bed.codePoint: Icons.bed,
+    Icons.bathroom.codePoint: Icons.bathroom,
+    Icons.meeting_room.codePoint: Icons.meeting_room,
+    Icons.garage.codePoint: Icons.garage,
+    Icons.local_library.codePoint: Icons.local_library,
+    Icons.stairs.codePoint: Icons.stairs,
+    Icons.devices.codePoint: Icons.devices,
+    Icons.home.codePoint: Icons.home,
+  };
+  return iconMap[codePoint] ?? Icons.devices;
+}

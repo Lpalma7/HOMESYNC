@@ -25,6 +25,7 @@ class _LoginScreenState extends State<LoginScreen> {
   void initState() {
     super.initState();
     _loadRememberMe();
+    _checkAutoLogin(); // Check if user should be auto-logged in
     _passwordVisible = false;
   }
 
@@ -35,16 +36,58 @@ class _LoginScreenState extends State<LoginScreen> {
     super.dispose();
   }
 
+  // Load remember me state and saved credentials
   void _loadRememberMe() async {
     SharedPreferences prefs = await SharedPreferences.getInstance();
     setState(() {
       _rememberMe = prefs.getBool('remember_me') ?? false;
+      if (_rememberMe) {
+        // Load saved email if remember me is enabled
+        _emailController.text = prefs.getString('saved_email') ?? '';
+      }
     });
   }
 
+  // Save remember me state and credentials
   void _saveRememberMe(bool value) async {
     SharedPreferences prefs = await SharedPreferences.getInstance();
-    prefs.setBool('remember_me', value);
+    await prefs.setBool('remember_me', value);
+    
+    if (value) {
+      // Save email when remember me is checked
+      await prefs.setString('saved_email', _emailController.text.trim());
+      // Save login timestamp for auto-login expiration
+      await prefs.setInt('login_timestamp', DateTime.now().millisecondsSinceEpoch);
+    } else {
+      // Clear saved data when remember me is unchecked
+      await prefs.remove('saved_email');
+      await prefs.remove('login_timestamp');
+    }
+  }
+
+  // Check if user should be automatically logged in
+  void _checkAutoLogin() async {
+    SharedPreferences prefs = await SharedPreferences.getInstance();
+    bool rememberMe = prefs.getBool('remember_me') ?? false;
+    
+    if (rememberMe) {
+      int? loginTimestamp = prefs.getInt('login_timestamp');
+      
+      if (loginTimestamp != null) {
+        // Check if login is still valid (e.g., within 30 days)
+        DateTime loginTime = DateTime.fromMillisecondsSinceEpoch(loginTimestamp);
+        DateTime now = DateTime.now();
+        int daysDifference = now.difference(loginTime).inDays;
+        
+        // Auto-login if within 30 days and Firebase user is still authenticated
+        if (daysDifference < 30 && FirebaseAuth.instance.currentUser != null) {
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(builder: (context) => HomepageScreen()),
+          );
+        }
+      }
+    }
   }
 
   @override
@@ -86,7 +129,7 @@ class _LoginScreenState extends State<LoginScreen> {
                   ),
                 ),
               ),
-              Transform.translate( //title
+              Transform.translate(
                 offset: Offset(-55, -170),
                 child: Text(
                   'LOG IN',
@@ -97,8 +140,7 @@ class _LoginScreenState extends State<LoginScreen> {
                   ),
                 ),
               ),
-
-              Transform.translate( // title
+              Transform.translate(
                 offset: Offset(1, -70),
                 child: Text(
                   'HOMESYNC',
@@ -133,7 +175,6 @@ class _LoginScreenState extends State<LoginScreen> {
                   },
                 ),
               ),
-
               Transform.translate(
                 offset: Offset(0, -20),
                 child: TextFormField(
@@ -148,14 +189,12 @@ class _LoginScreenState extends State<LoginScreen> {
                     ),
                     suffixIcon: IconButton(
                       icon: Icon(
-                        
                         _passwordVisible 
                             ? Icons.visibility 
                             : Icons.visibility_off,
                         color: Colors.grey,
                       ),
                       onPressed: () {
-                       
                         setState(() {
                           _passwordVisible = !_passwordVisible;
                         });
@@ -173,7 +212,6 @@ class _LoginScreenState extends State<LoginScreen> {
                   },
                 ),
               ),
-              
               Transform.translate(
                 offset: Offset(100, -25),
                 child: TextButton(
@@ -194,7 +232,6 @@ class _LoginScreenState extends State<LoginScreen> {
                   ),
                 ),
               ),
-
               Transform.translate(
                 offset: Offset(-10, -70),
                 child: Row(
@@ -226,24 +263,39 @@ class _LoginScreenState extends State<LoginScreen> {
                   ],
                 ),
               ),
-              
               Transform.translate(
                 offset: Offset(0, -20),
                 child: ElevatedButton(
                   onPressed: () async {
                     if (_formKey.currentState!.validate()) {
                       try {
-                        await FirebaseAuth.instance.signInWithEmailAndPassword(
+                        UserCredential userCredential = await FirebaseAuth.instance.signInWithEmailAndPassword(
                           email: _emailController.text.trim(),
                           password: _passwordController.text.trim(),
                         );
-                        // Navigate to the next screen upon successful login
-                        Navigator.pushReplacement(
-                          context,
-                          MaterialPageRoute(builder: (context) => HomepageScreen()),
-                        );
+                        
+                        if (userCredential.user != null) {
+                          // Save login info if remember me is checked
+                          if (_rememberMe) {
+                            SharedPreferences prefs = await SharedPreferences.getInstance();
+                            await prefs.setString('saved_email', _emailController.text.trim());
+                            await prefs.setInt('login_timestamp', DateTime.now().millisecondsSinceEpoch);
+                          }
+                          
+                          // Navigate to the next screen upon successful login
+                          Navigator.pushReplacement(
+                            context,
+                            MaterialPageRoute(builder: (context) => HomepageScreen()),
+                          );
+                        } else {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('Login successful, but user data is unavailable. Please try again.'),
+                              backgroundColor: Colors.orange,
+                            ),
+                          );
+                        }
                       } on FirebaseAuthException catch (e) {
-                        // Display error message to the user
                         ScaffoldMessenger.of(context).showSnackBar(
                           SnackBar(
                             content: Text(e.message ?? 'An error occurred during login.'),
@@ -251,7 +303,6 @@ class _LoginScreenState extends State<LoginScreen> {
                           ),
                         );
                       } catch (e) {
-                        // Handle other potential errors
                         ScaffoldMessenger.of(context).showSnackBar(
                           SnackBar(
                             content: Text('An unexpected error occurred.'),
@@ -280,7 +331,6 @@ class _LoginScreenState extends State<LoginScreen> {
                   ),
                 ),
               ),
-
               SizedBox(height: 10),
               TextButton(
                 onPressed: () {
