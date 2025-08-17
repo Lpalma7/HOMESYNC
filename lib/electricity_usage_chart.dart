@@ -53,7 +53,7 @@ class _ElectricityUsageChartState extends State<ElectricityUsageChart> {
 
   // Helper to get month name, week of month (can be moved to a utility file)
   String _getMonthName(int month) {
-    const monthNames = ['', 'january', 'february', 'march', 'april', 'may', 'june', 'july', 'august', 'september', 'october', 'november', 'december'];
+    const monthNames = ['', 'january', 'february', 'march', 'april', 'may', 'jun', 'july', 'august', 'september', 'october', 'november', 'december']; // "june" changed to "jun"
     return monthNames[month].toLowerCase();
   }
 

@@ -5,24 +5,20 @@ import 'package:homesync/usage.dart'; // Now imports UsageService
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'dart:async';
 import 'package:homesync/databaseservice.dart'; // Import DatabaseService
-// Import ElectricityUsageChart
 import 'package:firebase_auth/firebase_auth.dart'; // Import FirebaseAuth
-// Import DetailedUsageScreen
 import 'package:intl/intl.dart'; // Import for date formatting
+import 'package:homesync/scheduling_service.dart'; // Import the scheduling service
 
-// Adding a comment to trigger re-analysis
 class DeviceInfoScreen extends StatefulWidget {
-  final String applianceId; // e.g., "light1", "socket2"
+  final String applianceId;
   final String initialDeviceName;
-  // deviceUsage might be better fetched directly or calculated from Firestore data
-  // For now, let's assume it might be passed or derived.
-  // final String initialDeviceUsage;
+  final ApplianceSchedulingService schedulingService;
 
   const DeviceInfoScreen({
     super.key,
     required this.applianceId,
     required this.initialDeviceName,
-    // required this.initialDeviceUsage,
+    required this.schedulingService,
   });
 
   @override
@@ -32,43 +28,43 @@ class DeviceInfoScreen extends StatefulWidget {
 class DeviceInfoScreenState extends State<DeviceInfoScreen> {
   final DatabaseService _dbService = DatabaseService();
   StreamSubscription? _applianceSubscription;
-  final FirebaseAuth _auth = FirebaseAuth.instance; // FirebaseAuth instance
-  late UsageService _usageService; // Instance of UsageService
+  StreamSubscription? _specificRelayStateSubscription; // For this device's relay
+  final FirebaseAuth _auth = FirebaseAuth.instance;
+  late UsageService _usageService;
+  late ApplianceSchedulingService _schedulingService;
 
-  // State variables to hold data from Firestore and for editing
+  // Schedule details state
+  String? _startTimeStr;
+  String? _endTimeStr;
+  List<String> _scheduledDays = [];
+
   bool _isDeviceOn = false;
-  bool _isLoadingUsage = false; // Initialize to false for immediate display
+  bool _isLoadingUsage = false;
   String _currentDeviceName = "";
-  String _currentDeviceUsage = "0 kWh"; // Default or placeholder
-  // State variable for latest daily usage
-  final String _latestDailyUsage = "0 kWh";
-  // State variable to toggle between latest daily usage and average usages
-  final bool _showAverageUsages = false;
-  // State variable to hold average usages
-  Map<String, double> _averageUsages = {};
-  // State variable to track the selected usage period
-  final String _selectedUsagePeriod = 'daily'; // Default to daily
-  bool _isRefreshing = false; // State for refresh indicator
+  String _currentDeviceUsage = "0 kWh";
+  final String _latestDailyUsage = "0 kWh"; 
+  final bool _showAverageUsages = false; 
+  Map<String, double> _averageUsages = {}; 
+  bool _isRefreshing = false;
 
+ main
   // Editable fields - removed _nameController since name is no longer editable
+  late TextEditingController _nameController;
+ wout_notif
   late TextEditingController _roomController;
   late TextEditingController _typeController;
-  final TextEditingController _kWhRateController = TextEditingController(text: "0.0"); // Initialize immediately
-  IconData _selectedIcon = Icons.devices; // State for selected icon
-  
-  // Add state variable for device type dropdown
-  String _deviceType = 'Light'; // Default value
-
-  // State variable for room names
+  final TextEditingController _kWhRateController = TextEditingController(text: "0.0");
+  IconData _selectedIcon = Icons.devices;
+  String _deviceType = 'Light';
   List<String> _roomNames = [];
-  String? _selectedRoom; // Added state variable for selected room
+  String? _selectedRoom;
 
-  // State variables for usage display
-  String _selectedPeriod = 'Daily'; // State variable for selected period
-  double _totalUsageKwh = 0.0; // State variable for total usage
-  double _totalElectricityCost = 0.0; // State variable for total cost
+  String _selectedPeriod = 'Daily'; 
+  double _totalUsageKwh = 0.0;
+  double _totalElectricityCost = 0.0;
   StreamSubscription? _periodicUsageSubscription;
 
+ main
   // Helper function to get IconData from codePoint
   IconData _getIconFromCodePoint(int codePoint) {
     final Map<int, IconData> iconMap = {
@@ -108,54 +104,61 @@ class DeviceInfoScreenState extends State<DeviceInfoScreen> {
     _roomController = TextEditingController(); // Will be populated from fetched data
     _typeController = TextEditingController(); // Will be populated from fetched data
     _usageService = UsageService(); // Initialize UsageService
+
+  @override
+  void initState() {
+    super.initState();
+    _nameController = TextEditingController(text: widget.initialDeviceName);
+    _roomController = TextEditingController();
+    _typeController = TextEditingController();
+    _usageService = UsageService();
+    _schedulingService = widget.schedulingService;
+ wout_notif
     final userId = _auth.currentUser?.uid;
     if (userId != null) {
-      _listenToPeriodicUsageData(); // Changed from _calculateTotalUsageForPeriod
+      _listenToPeriodicUsageData();
     } else {
-       // Handle case where user is not logged in, maybe navigate to login
        print("User not logged in in initState");
-       // Consider adding a check and navigation here if necessary
     }
-
     _listenToApplianceData();
-    _fetchRooms(); // Fetch rooms when the state is initialized
+    _fetchRooms();
   }
 
   @override
   void dispose() {
     _applianceSubscription?.cancel();
+ main
     _periodicUsageSubscription?.cancel(); // Cancel the new subscription
     // Removed _nameController.dispose() since it's no longer used
+
+    _specificRelayStateSubscription?.cancel(); // Cancel new subscription
+    _periodicUsageSubscription?.cancel();
+    _nameController.dispose();
+ wout_notif
     _roomController.dispose();
     _typeController.dispose();
-    _kWhRateController.dispose(); // Dispose the new controller
+    _kWhRateController.dispose();
     super.dispose();
   }
 
   void _listenToApplianceData() {
-    final userId = _auth.currentUser?.uid; // Use FirebaseAuth to get user ID
+    final userId = _auth.currentUser?.uid;
     if (userId == null) {
-      print("User not logged in, cannot listen to appliance data.");
-      // Handle not logged in state, maybe show an error or default view
-      if (mounted) {
-        setState(() {
-          _currentDeviceName = "Error: Not logged in";
-        });
-      }
+      if (mounted) setState(() => _currentDeviceName = "Error: Not logged in");
       return;
     }
-
     _applianceSubscription = _dbService.streamDocument(
       collectionPath: 'users/$userId/appliances',
       docId: widget.applianceId,
-    ).listen((DocumentSnapshot<Map<String, dynamic>> snapshot) async { // Added async here
+    ).listen((DocumentSnapshot<Map<String, dynamic>> snapshot) async {
       if (snapshot.exists && snapshot.data() != null) {
         final data = snapshot.data()!;
         if (mounted) {
-          // Fetch user document to get kwhr
           final userDoc = await FirebaseFirestore.instance.collection('users').doc(userId).get();
-          double userKwhrValue = (userDoc.exists && userDoc.data() != null && userDoc.data()!['kwhr'] is num) ? (userDoc.data()!['kwhr'] as num).toDouble() : 0.0;
+          final userData = userDoc.data(); // Explicit cast
+          double userKwhrValue = (userDoc.exists && userData != null && userData['kwhr'] is num) ? (userData['kwhr'] as num).toDouble() : DEFAULT_KWHR_RATE;
 
+ main
           // Get wattage from appliance data
           final double wattage = (data['wattage'] is num) ? (data['wattage'] as num).toDouble() : 0.0;
 
@@ -186,47 +189,112 @@ class DeviceInfoScreenState extends State<DeviceInfoScreen> {
               _selectedRoom = data['roomName'] as String?;
             });
           }
+          setState(() {
+            _isDeviceOn = (data['applianceStatus'] == 'ON');
+            _currentDeviceName = data['applianceName'] ?? widget.initialDeviceName;
+            _startTimeStr = data['startTime'] as String?;
+            _endTimeStr = data['endTime'] as String?;
+            final daysData = data['days'];
+            if (daysData is List) {
+              _scheduledDays = List<String>.from(daysData.map((day) => day.toString()));
+            } else {
+              _scheduledDays = [];
+            }
+            _nameController.text = _currentDeviceName;
+            _roomController.text = data['roomName'] ?? "";
+            _deviceType = data['deviceType'] ?? "Light";
+            _typeController.text = _deviceType;
+            _selectedIcon = IconData(data['icon'] ?? Icons.devices.codePoint, fontFamily: 'MaterialIcons');
+            _kWhRateController.text = userKwhrValue.toString();
+            double accumulatedKwh = (data['kwh'] is num) ? (data['kwh'] as num).toDouble() : 0.0;
+            _currentDeviceUsage = "${accumulatedKwh.toStringAsFixed(2)} kWh";
+            _selectedRoom = data['roomName'] as String?;
+
+            // After getting appliance data, listen to its specific relay state
+            final String? relayKey = data['relay'] as String?;
+            _listenToSpecificRelayState(relayKey);
+          });
+ wout_notif
         }
       } else {
         if (mounted) {
           setState(() {
             _currentDeviceName = "Appliance not found";
-            _isDeviceOn = false;
-            _isLoadingUsage = false; // Stop loading if appliance not found
+            _isDeviceOn = false; // Default if appliance not found
+            _isLoadingUsage = false; 
           });
         }
-        print("Appliance document ${widget.applianceId} does not exist.");
       }
     }, onError: (error) {
-      print("Error listening to appliance ${widget.applianceId}: $error");
+      if (mounted) setState(() => _currentDeviceName = "Error loading data");
+    });
+  }
+
+  void _listenToSpecificRelayState(String? relayKey) {
+    _specificRelayStateSubscription?.cancel();
+    final userId = _auth.currentUser?.uid;
+    if (userId == null || relayKey == null || relayKey.isEmpty) {
+      print("DeviceInfoScreen: Cannot listen to specific relay state - userId or relayKey missing.");
+      // Ensure _isDeviceOn reflects a default or error state if needed
+      if (mounted && (relayKey == null || relayKey.isEmpty)) {
+          setState(() {
+              _isDeviceOn = false; // Default to OFF if no relay key
+          });
+      }
+      return;
+    }
+
+    print("DeviceInfoScreen: Listening to relay state for $relayKey for user $userId");
+    _specificRelayStateSubscription = FirebaseFirestore.instance
+        .collection('users')
+        .doc(userId)
+        .collection('relay_states')
+        .doc(relayKey)
+        .snapshots()
+        .listen((snapshot) {
       if (mounted) {
-        setState(() {
-          _currentDeviceName = "Error loading data";
-          _isLoadingUsage = false; // Stop loading on error
-        });
+        if (snapshot.exists && snapshot.data() != null) {
+          final relayData = snapshot.data()!;
+          final bool currentRelayIsOn = (relayData['state'] == 1);
+          print("DeviceInfoScreen: Relay $relayKey state received: ${relayData['state']}. UI should be ${currentRelayIsOn ? 'ON' : 'OFF'}");
+          if (_isDeviceOn != currentRelayIsOn) { // Only update if different to avoid unnecessary rebuilds
+            setState(() {
+              _isDeviceOn = currentRelayIsOn;
+            });
+          }
+        } else {
+          print("DeviceInfoScreen: Relay document for $relayKey does not exist. Defaulting UI to OFF.");
+          // If relay doc doesn't exist, assume OFF
+          if (_isDeviceOn != false) {
+            setState(() {
+              _isDeviceOn = false;
+            });
+          }
+        }
+      }
+    }, onError: (error) {
+      print("DeviceInfoScreen: Error listening to relay state for $relayKey: $error");
+      if (mounted && _isDeviceOn != false) { // Default to OFF on error
+          setState(() {
+              _isDeviceOn = false;
+          });
       }
     });
   }
 
-  // Method to fetch room names from the database
   Future<void> _fetchRooms() async {
-    print("Fetching rooms..."); // Debug print
-    final userId = _auth.currentUser?.uid; // Use FirebaseAuth to get user ID
-    if (userId == null) {
-      print("User not logged in, cannot fetch rooms.");
-      return;
-    }
+    final userId = _auth.currentUser?.uid;
+    if (userId == null) return;
     try {
-      final roomDocs = await _dbService.getCollection(collectionPath: 'users/$userId/Rooms'); // Corrected path
-      final roomNames = roomDocs.docs.map((doc) => doc['roomName'] as String).toList(); // Fetch roomName field
+      final roomDocs = await _dbService.getCollection(collectionPath: 'users/$userId/Rooms');
+      final roomNames = roomDocs.docs.map((doc) => doc['roomName'] as String).toList();
       if (mounted) {
         setState(() {
           _roomNames = roomNames;
-          // Set initial selected room if device data has a roomName
           if (_roomController.text.isNotEmpty && _roomNames.contains(_roomController.text)) {
             _selectedRoom = _roomController.text;
           } else if (_roomNames.isNotEmpty) {
-            _selectedRoom = _roomNames.first; // Default to first room if available
+            _selectedRoom = _roomNames.first;
             _roomController.text = _selectedRoom!;
           } else {
             _selectedRoom = null;
@@ -234,10 +302,8 @@ class DeviceInfoScreenState extends State<DeviceInfoScreen> {
           }
         });
       }
-       print("Fetched rooms: $_roomNames"); // Debug print
     } catch (e) {
       print("Error fetching rooms: $e");
-      // Handle error, maybe show a message
     }
   }
 
@@ -250,11 +316,7 @@ class DeviceInfoScreenState extends State<DeviceInfoScreen> {
       builder: (BuildContext context) {
         return AlertDialog(
           backgroundColor: const Color(0xFFE9E7E6),
-          titleTextStyle: GoogleFonts.jaldi(
-            fontSize: 25,
-            fontWeight: FontWeight.bold,
-            color: Colors.black,
-          ),
+          titleTextStyle: GoogleFonts.jaldi(fontSize: 25, fontWeight: FontWeight.bold, color: Colors.black),
           title: Text('Add New Room'),
           content: StatefulBuilder(
             builder: (BuildContext context, StateSetter setDialogState) {
@@ -264,44 +326,21 @@ class DeviceInfoScreenState extends State<DeviceInfoScreen> {
                   children: [
                     TextField(
                       controller: newRoomController,
-                      style: GoogleFonts.inter(
-                        textStyle: TextStyle(fontSize: 17),
-                        color: Colors.black,
-                      ),
+                      style: GoogleFonts.inter(textStyle: TextStyle(fontSize: 17), color: Colors.black),
                       decoration: InputDecoration(
-                        filled: true,
-                        fillColor: Colors.white,
-                        border: OutlineInputBorder(),
-                        hintText: "Enter Room Name",
-                        hintStyle: GoogleFonts.inter(
-                          color: Colors.grey,
-                          fontSize: 15,
-                        ),
-                        prefixIcon: Icon(
-                          roomIconSelected,
-                          color: Colors.black,
-                          size: 24,
-                        ),
+                        filled: true, fillColor: Colors.white, border: OutlineInputBorder(),
+                        hintText: "Enter Room Name", hintStyle: GoogleFonts.inter(color: Colors.grey, fontSize: 15),
+                        prefixIcon: Icon(roomIconSelected, color: Colors.black, size: 24),
                       ),
                     ),
                     SizedBox(height: 15),
-                    Text(
-                      'Select Icon',
-                      style: GoogleFonts.jaldi(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.black,
-                      ),
-                    ),
+                    Text('Select Icon', style: GoogleFonts.jaldi(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.black)),
                     SizedBox(height: 5),
                     Container(
-                      height: 200,
-                      width: double.maxFinite,
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(8),
-                      ),
+                      height: 200, width: double.maxFinite,
+                      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(8)),
                       child: GridView.count(
+ main
                         crossAxisCount: 4,
                         shrinkWrap: true,
                         children: const [
@@ -317,6 +356,16 @@ class DeviceInfoScreenState extends State<DeviceInfoScreen> {
                                 roomIconSelected = icon;
                               });
                             },
+                        crossAxisCount: 4, shrinkWrap: true,
+                        children: [
+                          Icons.living, Icons.bed, Icons.kitchen, Icons.dining,
+                          Icons.bathroom, Icons.meeting_room, Icons.workspace_premium, Icons.chair,
+                          Icons.stairs, Icons.garage, Icons.yard, Icons.balcony,
+                        ].map((icon) {
+                          return IconButton(
+                            icon: Icon(icon, color: roomIconSelected == icon ? Theme.of(context).colorScheme.secondary : Colors.black),
+                            onPressed: () => setDialogState(() => roomIconSelected = icon),
+ wout_notif
                           );
                         }).toList(),
                       ),
@@ -328,33 +377,13 @@ class DeviceInfoScreenState extends State<DeviceInfoScreen> {
           ),
           actions: <Widget>[
             TextButton(
-              child: Text(
-                'Cancel',
-                style: GoogleFonts.jaldi(
-                  textStyle: TextStyle(fontSize: 18, color: Colors.black87),
-                ),
-              ),
-              onPressed: () {
-                Navigator.of(context).pop();
-              },
+              child: Text('Cancel', style: GoogleFonts.jaldi(textStyle: TextStyle(fontSize: 18, color: Colors.black87))),
+              onPressed: () => Navigator.of(context).pop(),
             ),
             TextButton(
-              onPressed: () async {
-                if (newRoomController.text.trim().isNotEmpty) {
-                  Navigator.of(context).pop(newRoomController.text.trim());
-                }
-              },
-              style: ButtonStyle(
-                backgroundColor: WidgetStateProperty.all(Colors.black),
-                foregroundColor: WidgetStateProperty.all(Colors.white),
-              ),
-              child: Text(
-                'Add',
-                style: GoogleFonts.jaldi(
-                  textStyle: TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
-                  color: Colors.white,
-                ),
-              ),
+              onPressed: () { if (newRoomController.text.trim().isNotEmpty) Navigator.of(context).pop(newRoomController.text.trim()); },
+              style: ButtonStyle(backgroundColor: WidgetStateProperty.all(Colors.black), foregroundColor: WidgetStateProperty.all(Colors.white)),
+              child: Text('Add', style: GoogleFonts.jaldi(textStyle: TextStyle(fontSize: 15, fontWeight: FontWeight.bold), color: Colors.white)),
             ),
           ],
         );
@@ -362,103 +391,35 @@ class DeviceInfoScreenState extends State<DeviceInfoScreen> {
     );
 
     if (newRoomName != null && newRoomName.isNotEmpty) {
-      final userId = _auth.currentUser?.uid; // Use _auth instance
+      final userId = _auth.currentUser?.uid;
       if (userId != null) {
         try {
-          // Add the new room to the database with both name and icon
-          await _dbService.addDocumentToCollection( // Use _dbService instance
-            collectionPath: 'users/$userId/Rooms', // Corrected path
-            data: {
-              'roomName': newRoomName,
-              'icon': roomIconSelected.codePoint,
-              'createdAt': FieldValue.serverTimestamp(),
-            },
+          await _dbService.addDocumentToCollection(
+            collectionPath: 'users/$userId/Rooms',
+            data: {'roomName': newRoomName, 'icon': roomIconSelected.codePoint, 'createdAt': FieldValue.serverTimestamp()},
           );
-          // Refresh the room list
           await _fetchRooms();
-          // Optionally select the newly added room
-          if (mounted) {
-            if (_roomNames.contains(newRoomName)) {
-              if (mounted) {
-                setState(() {
-                  _selectedRoom = newRoomName; // Update new state variable
-                  _roomController.text = newRoomName;
-                });
-              }
-            }
+          if (mounted && _roomNames.contains(newRoomName)) {
+            setState(() { _selectedRoom = newRoomName; _roomController.text = newRoomName; });
           }
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text("Room '$newRoomName' added successfully!"))
-          );
+          if(mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Room '$newRoomName' added successfully!")));
         } catch (e) {
-          print("Error adding room: $e");
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text("Error adding room: ${e.toString()}"))
-          );
+          if(mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Error adding room: ${e.toString()}")));
         }
       }
     }
   }
 
-  // Method to fetch average usages for a specific period
   Future<void> _fetchUsageForPeriod(String period) async {
-     final userId = _auth.currentUser?.uid; // Use FirebaseAuth to get user ID
-     if (userId == null) {
-      print("User not logged in, cannot fetch average usages.");
-      return;
-    }
-
-    final applianceDoc = await FirebaseFirestore.instance
-        .collection('users')
-        .doc(userId)
-        .collection('appliances')
-        .doc(widget.applianceId)
-        .get();
-
-    double wattage = 0.0;
-    if (applianceDoc.exists && applianceDoc.data() != null) {
-      wattage = (applianceDoc.data()!['wattage'] is num) ? (applianceDoc.data()!['wattage'] as num).toDouble() : 0.0;
-    } else {
-      print('Appliance ${widget.applianceId} not found or wattage not set.');
-    }
-
-    // This method needs to be rewritten to fetch data from the new Firestore structure
-    // populated by UsageService. For now, it won't fetch meaningful data.
-    // _usageTracker = UsageTracker(userId: userId, applianceId: widget.applianceId, wattage: wattage);
-
-    if (mounted) {
-      // try {
-      //   // final usageData = await _usageTracker.getUsageData(period); // Old call
-      //   // This needs to be replaced with fetching from new aggregated paths.
-      //   if (mounted) {
-      //     setState(() {
-      //       // Update _averageUsages with the fetched data for the selected period
-      //       // _averageUsages[period] = (usageData['totalKwhr'] is num) ? (usageData['totalKwhr'] as num).toDouble() : 0.0;
-      //     });
-      //   }
-      // } catch (e) {
-      //   print("Error fetching usage for $period: $e");
-      //   if (mounted) {
-      //      setState(() {
-      //       _averageUsages[period] = 0.0;
-      //      });
-      //   }
-      // }
-      print("INFO: _fetchUsageForPeriod for '$period' needs rewrite for UsageService data structure.");
-    }
+    print("INFO: _fetchUsageForPeriod for '$period' needs rewrite for UsageService data structure.");
   }
 
-  // Helper for month name (consistent with UsageService)
-  String _getMonthNameHelper(int month) { // Renamed to avoid conflict if class also has _getMonthName
-    const monthNames = [
-      '', 'january', 'february', 'march', 'april', 'may', 'june',
-      'july', 'august', 'september', 'october', 'november', 'december'
-    ];
+  String _getMonthNameHelper(int month) {
+    const monthNames = ['', 'january', 'february', 'march', 'april', 'may', 'jun', 'july', 'august', 'september', 'october', 'november', 'december'];
     return monthNames[month].toLowerCase();
   }
 
-  // Helper for week of month (consistent with UsageService)
-  int _getWeekOfMonthHelper(DateTime date) { // Renamed
+  int _getWeekOfMonthHelper(DateTime date) {
     if (date.day <= 7) return 1;
     if (date.day <= 14) return 2;
     if (date.day <= 21) return 3;
@@ -466,97 +427,29 @@ class DeviceInfoScreenState extends State<DeviceInfoScreen> {
     return 5;
   }
 
-  // Method to fetch all average usages (kept for initial load if needed elsewhere)
   Future<void> _fetchAverageUsages() async {
-     final userId = _auth.currentUser?.uid; // Use FirebaseAuth to get user ID
-     if (userId == null) {
-      print("User not logged in, cannot fetch average usages.");
-      return;
-    }
-    // This method needs to be rewritten for the new UsageService data structure.
-    // // Ensure wattage is fetched before initializing UsageTracker
-    // final applianceDoc = await FirebaseFirestore.instance
-    //     .collection('users')
-    //     .doc(userId)
-    //     .collection('appliances')
-    //     .doc(widget.applianceId)
-    //     .get();
-
-    // double wattage = 0.0;
-    // if (applianceDoc.exists && applianceDoc.data() != null) {
-    //   wattage = (applianceDoc.data()!['wattage'] is num) ? (applianceDoc.data()!['wattage'] as num).toDouble() : 0.0;
-    // } else {
-    //   print('Appliance ${widget.applianceId} not found or wattage not set.');
-    // }
-
-    // _usageTracker = UsageTracker(userId: userId, applianceId: widget.applianceId, wattage: wattage);
-
-
-    // if (mounted) {
-    //   try {
-    //     // final averages = await _usageTracker.getAverageUsages(); // Old call
-    //     if (mounted) {
-    //       setState(() {
-    //         // _averageUsages = Map<String, double>.from(averages); // Explicitly cast to Map<String, double>
-    //       });
-    //     }
-    //   } catch (e) {
-    //     print("Error fetching average usages: $e");
-    //     if (mounted) {
-    //        setState(() {
-    //         _averageUsages = {
-    //           'daily': 0.0,
-    //           'weekly': 0.0,
-    //           'monthly': 0.0,
-    //           'yearly': 0.0,
-    //         };
-    //        });
-    //     }
-    //   }
-    // }
-    print("INFO: _fetchAverageUsages needs rewrite for UsageService data structure.");
+     print("INFO: _fetchAverageUsages needs rewrite for UsageService data structure.");
   }
 
-  // Function to listen to total usage and cost for the selected period for this device
   void _listenToPeriodicUsageData() {
-    _periodicUsageSubscription?.cancel(); // Cancel any previous subscription
-
+     _periodicUsageSubscription?.cancel();
     final user = _auth.currentUser;
     if (user == null) {
-      print("User not authenticated. Cannot calculate usage.");
-      if (mounted) {
-        setState(() {
-          _totalUsageKwh = 0.0;
-          _totalElectricityCost = 0.0;
-          _isLoadingUsage = false;
-        });
-      }
+      if (mounted) setState(() { _totalUsageKwh = 0.0; _totalElectricityCost = 0.0; _isLoadingUsage = false; });
       return;
     }
-
-    if (mounted) {
-      setState(() {
-        _isLoadingUsage = true;
-      });
-    }
-
+    if (mounted) setState(() => _isLoadingUsage = true);
     final userId = user.uid;
     final applianceId = widget.applianceId;
-    final now = DateTime.now(); // Use current time to determine the period document
+    final now = DateTime.now();
     String firestorePath;
-
     String yearStr = now.year.toString();
     String monthName = _getMonthNameHelper(now.month);
     int weekOfMonth = _getWeekOfMonthHelper(now);
-    String dayStr = DateFormat('yyyy-MM-dd').format(now); // Current day for daily, or reference for others
+    String dayStr = DateFormat('yyyy-MM-dd').format(now);
 
-    // Note: For weekly, monthly, yearly, this path points to the *current* week/month/year's document.
-    // If you need to show historical data for a *specific* week/month selected by user,
-    // the 'now' variable would need to be adjusted or passed in.
-    // For simplicity, this implementation fetches the current period's data.
     switch (_selectedPeriod.toLowerCase()) {
       case 'daily':
-        // For 'Daily', we usually want today's data.
         firestorePath = 'users/$userId/appliances/$applianceId/yearly_usage/$yearStr/monthly_usage/${monthName}_usage/week_usage/week${weekOfMonth}_usage/day_usage/$dayStr';
         break;
       case 'weekly':
@@ -569,19 +462,9 @@ class DeviceInfoScreenState extends State<DeviceInfoScreen> {
         firestorePath = 'users/$userId/appliances/$applianceId/yearly_usage/$yearStr';
         break;
       default:
-        print('Invalid period selected: $_selectedPeriod');
-        if (mounted) {
-          setState(() {
-            _totalUsageKwh = 0.0;
-            _totalElectricityCost = 0.0;
-            _isLoadingUsage = false;
-          });
-        }
+        if (mounted) setState(() { _totalUsageKwh = 0.0; _totalElectricityCost = 0.0; _isLoadingUsage = false;});
         return;
     }
-    
-    print("Listening to device usage from Firestore path: $firestorePath");
-
     _periodicUsageSubscription = FirebaseFirestore.instance.doc(firestorePath).snapshots().listen(
       (snapshot) {
         if (mounted) {
@@ -593,82 +476,235 @@ class DeviceInfoScreenState extends State<DeviceInfoScreen> {
               _isLoadingUsage = false;
             });
           } else {
-            print("Periodic usage document for appliance $applianceId not found at path: $firestorePath. Setting usage to 0.");
-            setState(() {
-              _totalUsageKwh = 0.0;
-              _totalElectricityCost = 0.0;
-              _isLoadingUsage = false;
-            });
+            setState(() { _totalUsageKwh = 0.0; _totalElectricityCost = 0.0; _isLoadingUsage = false;});
           }
         }
       },
       onError: (error) {
-        print("Error listening to usage data for appliance $applianceId from $firestorePath: $error");
-        if (mounted) {
-          setState(() {
-            _totalUsageKwh = 0.0;
-            _totalElectricityCost = 0.0;
-            _isLoadingUsage = false;
-          });
-        }
+        if (mounted) setState(() { _totalUsageKwh = 0.0; _totalElectricityCost = 0.0; _isLoadingUsage = false; });
       }
     );
   }
 
+  // Helper methods for schedule logic
+  TimeOfDay? _parseTime(String? timeStr, {bool isStartTime = false}) {
+    if (timeStr == null || timeStr.isEmpty) return null;
+    if (isStartTime && timeStr == "0") { // "0" for startTime means DO NOT auto-ON
+        return null; 
+    }
+    try {
+      final parts = timeStr.split(':');
+      if (parts.length == 2) {
+        return TimeOfDay(hour: int.parse(parts[0]), minute: int.parse(parts[1]));
+      }
+    } catch (e) {
+      print("DeviceInfoScreen: Error parsing time string '$timeStr': $e");
+    }
+    return null;
+  }
+
+  String _getCurrentDayName(DateTime now) {
+    return DateFormat('E').format(now); // E.g., "Mon", "Tue"
+  }
+
+  Future<bool> _showConfirmationDialog({required String title, required String content}) async {
+    if (!mounted) return false;
+    return await showDialog<bool>(
+          context: context,
+          builder: (BuildContext context) {
+            return AlertDialog(
+              title: Text(title),
+              content: Text(content),
+              actions: <Widget>[
+                TextButton(
+                  child: const Text('No'),
+                  onPressed: () => Navigator.of(context).pop(false),
+                ),
+                TextButton(
+                  child: const Text('Yes'),
+                  onPressed: () => Navigator.of(context).pop(true),
+                ),
+              ],
+            );
+          },
+        ) ?? false;
+  }
 
   Future<void> _toggleDeviceStatus(bool newStatus) async {
-    final newStatusString = newStatus ? 'ON' : 'OFF';
     final userId = _auth.currentUser?.uid;
     if (userId == null) {
       print("User not logged in, cannot update appliance status.");
       return;
     }
 
+    DocumentSnapshot applianceSnap = await FirebaseFirestore.instance
+        .collection('users').doc(userId)
+        .collection('appliances').doc(widget.applianceId)
+        .get();
+
+    if (!applianceSnap.exists || applianceSnap.data() == null) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("Appliance data not found. Cannot toggle.")),
+        );
+      }
+      return;
+    }
+    Map<String, dynamic> applianceData = applianceSnap.data() as Map<String, dynamic>;
+    double wattage = (applianceData['wattage'] as num?)?.toDouble() ?? 0.0;
+    
+    DocumentSnapshot userSnap = await FirebaseFirestore.instance.collection('users').doc(userId).get();
+    double kwhrRate = DEFAULT_KWHR_RATE; 
+    if (userSnap.exists && userSnap.data() != null) {
+        kwhrRate = ((userSnap.data() as Map<String,dynamic>)['kwhr'] as num?)?.toDouble() ?? DEFAULT_KWHR_RATE;
+    }
+
+    DateTime now = DateTime.now();
+    TimeOfDay currentTime = TimeOfDay.fromDateTime(now);
+    String currentDayName = _getCurrentDayName(now);
+
+    // Use schedule details from state, which are updated by _listenToApplianceData
+    TimeOfDay? scheduledStartTime = _parseTime(_startTimeStr, isStartTime: true);
+    TimeOfDay? scheduledEndTime = _parseTime(_endTimeStr); 
+    bool isScheduledToday = _scheduledDays.contains(currentDayName);
+
+    bool proceedWithToggle = true;
+
+    if (newStatus == true) { // Turning ON
+      if (isScheduledToday && scheduledEndTime != null && scheduledStartTime != null) {
+        double currentMinutes = currentTime.hour * 60.0 + currentTime.minute;
+        double endMinutes = scheduledEndTime.hour * 60.0 + scheduledEndTime.minute;
+        double startMinutes = scheduledStartTime.hour * 60.0 + scheduledStartTime.minute;
+        
+        bool isAfterScheduledEnd = false;
+        if (startMinutes <= endMinutes) { // Same day schedule
+            isAfterScheduledEnd = currentMinutes > endMinutes;
+        } else { // Overnight schedule
+             if (currentMinutes > endMinutes && currentMinutes < startMinutes) { 
+                isAfterScheduledEnd = true;
+             }
+        }
+
+        if (isAfterScheduledEnd) {
+             proceedWithToggle = await _showConfirmationDialog(
+                title: 'Confirm Action',
+                content: 'The scheduled ON time for $_currentDeviceName has ended for today. Are you sure you want to turn it ON?',
+             );
+        }
+      }
+    } else { // Turning OFF
+      if (isScheduledToday && scheduledStartTime != null && scheduledEndTime != null) {
+        double currentMinutes = currentTime.hour * 60.0 + currentTime.minute;
+        double startMinutes = scheduledStartTime.hour * 60.0 + scheduledStartTime.minute;
+        double endMinutes = scheduledEndTime.hour * 60.0 + scheduledEndTime.minute;
+
+        bool withinScheduledOnPeriod = false;
+        if (startMinutes <= endMinutes) { // Same day schedule
+            withinScheduledOnPeriod = currentMinutes >= startMinutes && currentMinutes < endMinutes;
+        } else { // Overnight schedule
+            withinScheduledOnPeriod = currentMinutes >= startMinutes || currentMinutes < endMinutes;
+        }
+
+        if (withinScheduledOnPeriod) {
+          proceedWithToggle = await _showConfirmationDialog(
+            title: 'Confirm Action',
+            content: '$_currentDeviceName is currently within its scheduled ON time. Are you sure you want to turn it OFF?',
+          );
+          if (proceedWithToggle && mounted) {
+            _schedulingService.recordManualOffOverride(widget.applianceId, scheduledEndTime);
+          }
+        }
+      }
+    }
+
+    if (!proceedWithToggle) {
+      print("Toggle cancelled by user or schedule conflict.");
+      // Ensure the UI rebuilds with the current _isDeviceOn state,
+      // reverting any visual change if the user cancelled.
+      if (mounted) {
+        setState(() {});
+      }
+      return;
+    }
+
+    // Optimistic UI update
+    bool previousDeviceOnState = _isDeviceOn; // Store previous state for potential revert
+    if (mounted) {
+      setState(() {
+        _isDeviceOn = newStatus; 
+      });
+    }
+
     try {
-      // Fetch current appliance data to get wattage
-      DocumentSnapshot applianceSnap = await FirebaseFirestore.instance
-          .collection('users').doc(userId)
-          .collection('appliances').doc(widget.applianceId)
-          .get();
-
-      if (!applianceSnap.exists || applianceSnap.data() == null) {
-        print("Appliance data not found for ${widget.applianceId}");
-        return;
+      // === Prioritized Relay State Update ===
+      final String? relayKey = applianceData['relay'] as String?;
+      if (relayKey != null && relayKey.isNotEmpty) {
+        final int newRelayState = newStatus ? 1 : 0;
+        print("DeviceInfoScreen: PRIORITY: Attempting to update relay state for $relayKey to $newRelayState for user $userId.");
+        try {
+          await FirebaseFirestore.instance
+              .collection('users')
+              .doc(userId)
+              .collection('relay_states')
+              .doc(relayKey)
+              .set({'state': newRelayState}, SetOptions(merge: true)); 
+          print("DeviceInfoScreen: PRIORITY: Relay state update for $relayKey to $newRelayState successful.");
+        } catch (relayError) {
+          print("DeviceInfoScreen: PRIORITY: ERROR updating relay state for $relayKey: $relayError");
+          // Optionally, if relay update fails, we might not want to proceed or revert optimistic UI.
+          // For now, we'll let UsageService try, but this error is logged.
+        }
+      } else {
+        print("DeviceInfoScreen: PRIORITY: No relayKey found for appliance ${widget.applianceId}. Skipping relay state update.");
       }
-      Map<String, dynamic> applianceData = applianceSnap.data() as Map<String, dynamic>;
-      double wattage = (applianceData['wattage'] as num?)?.toDouble() ?? 0.0;
-      
-      // Fetch user's kWh rate
-      DocumentSnapshot userSnap = await FirebaseFirestore.instance.collection('users').doc(userId).get();
-      double kwhrRate = DEFAULT_KWHR_RATE; // Use default from usage.dart
-      if (userSnap.exists && userSnap.data() != null) {
-          kwhrRate = ((userSnap.data() as Map<String,dynamic>)['kwhr'] as num?)?.toDouble() ?? DEFAULT_KWHR_RATE;
-      }
+      // ====================================
 
-
-      // Update appliance status in Firestore
-      await FirebaseFirestore.instance
-          .collection('users').doc(userId)
-          .collection('appliances').doc(widget.applianceId)
-          .update({'applianceStatus': newStatusString});
-
-      // Call UsageService to handle the toggle
       await _usageService.handleApplianceToggle(
         userId: userId,
         applianceId: widget.applianceId,
         isOn: newStatus,
         wattage: wattage,
-        kwhrRate: kwhrRate, // You might need to fetch this or have a default
+        kwhrRate: kwhrRate,
       );
+      print("DeviceInfoScreen: UsageService.handleApplianceToggle called for ${widget.applianceId}.");
 
-      // Optimistic update, or rely on stream to update _isDeviceOn
-      // setState(() {
-      //   _isDeviceOn = newStatus;
-      // });
+      // Explicitly update the applianceStatus in the main appliance document
+      print("[DEVICE_INFO_TOGGLE] Attempting to update main appliance document for ${widget.applianceId} to status: ${newStatus ? 'ON' : 'OFF'}.");
+      await FirebaseFirestore.instance
+          .collection('users')
+          .doc(userId)
+          .collection('appliances')
+          .doc(widget.applianceId)
+          .update({'applianceStatus': newStatus ? 'ON' : 'OFF'});
+      print("[DEVICE_INFO_TOGGLE] SUCCESSFULLY updated main appliance document for ${widget.applianceId} with status: ${newStatus ? 'ON' : 'OFF'}.");
+
+      // Verification Read
+      print("[DEVICE_INFO_TOGGLE] Attempting verification read for ${widget.applianceId} immediately after update.");
+      try {
+        DocumentSnapshot updatedApplianceSnap = await FirebaseFirestore.instance
+            .collection('users')
+            .doc(userId)
+            .collection('appliances')
+            .doc(widget.applianceId)
+            .get();
+        if (updatedApplianceSnap.exists) {
+          final data = updatedApplianceSnap.data() as Map<String, dynamic>?;
+          final statusAfterUpdate = data?['applianceStatus'];
+          print("[DEVICE_INFO_TOGGLE] VERIFICATION SUCCESS for ${widget.applianceId}: applianceStatus is now '$statusAfterUpdate' in Firestore.");
+        } else {
+          print("[DEVICE_INFO_TOGGLE] VERIFICATION WARNING for ${widget.applianceId}: Document no longer exists after update attempt.");
+        }
+      } catch (verifyError) {
+        print("[DEVICE_INFO_TOGGLE] VERIFICATION ERROR for ${widget.applianceId}: Error during verification read: $verifyError");
+      }
+
     } catch (e) {
-      print("Error updating appliance status: $e");
-      // Show a snackbar or error message
+      print("Error during toggle operations (relay or UsageService) for ${widget.applianceId}: $e");
+      // Revert optimistic UI update on error
       if (mounted) {
+        setState(() {
+          _isDeviceOn = previousDeviceOnState; 
+        });
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text("Failed to update status: ${e.toString()}")),
         );
@@ -677,52 +713,33 @@ class DeviceInfoScreenState extends State<DeviceInfoScreen> {
   }
 
   Future<void> _updateDeviceDetails() async {
-    final userId = _auth.currentUser?.uid; // Use FirebaseAuth to get user ID
+    final userId = _auth.currentUser?.uid; 
     if (userId == null) {
       print("User not logged in, cannot update appliance details.");
       return;
     }
-
    
     double kWhRate = double.tryParse(_kWhRateController.text) ?? 0.0;
+ main
 
     // Data to update on the appliance document - removed 'applianceName' since it's no longer editable
+ wout_notif
     final applianceUpdateData = {
       'roomName': _roomController.text,
       'deviceType': _deviceType,
       'icon': _selectedIcon.codePoint,
-      // Remove kwhr from appliance update data
     };
-
-    // Data to update on the user document
-    final userUpdateData = {
-      'kwhr': kWhRate,
-    };
+    final userUpdateData = {'kwhr': kWhRate,};
 
     try {
-      // Update appliance document
-      await FirebaseFirestore.instance
-          .collection('users')
-          .doc(userId)
-          .collection('appliances')
-          .doc(widget.applianceId)
-          .update(applianceUpdateData);
-
-      // Update user document with kwhr
-      await FirebaseFirestore.instance
-          .collection('users')
-          .doc(userId)
-          .update(userUpdateData);
-
-
-      print("Appliance details and user kWh rate updated successfully for ${widget.applianceId}");
+      await FirebaseFirestore.instance.collection('users').doc(userId).collection('appliances').doc(widget.applianceId).update(applianceUpdateData);
+      await FirebaseFirestore.instance.collection('users').doc(userId).update(userUpdateData);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text("Device details and kWh rate updated successfully!")),
         );
       }
     } catch (e) {
-      print("Error updating appliance details or user kWh rate: $e");
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text("Failed to update details: ${e.toString()}"))
@@ -731,18 +748,13 @@ class DeviceInfoScreenState extends State<DeviceInfoScreen> {
     }
   }
 
-  // Method to show the icon picker dialog
   void _showIconPickerDialog() {
-    showDialog(
+     showDialog(
       context: context,
       builder: (BuildContext context) {
         return AlertDialog(
           backgroundColor: const Color(0xFFE9E7E6),
-          title: Text('Select an Icon',
-          style: GoogleFonts.jaldi(
-          fontWeight: FontWeight.bold
-          ),
-          ),
+          title: Text('Select an Icon', style: GoogleFonts.jaldi(fontWeight: FontWeight.bold)),
           content: SizedBox(
             width: double.maxFinite,
             child: SingleChildScrollView(
@@ -752,27 +764,16 @@ class DeviceInfoScreenState extends State<DeviceInfoScreen> {
                 children: _getCommonIcons().map((IconData icon) {
                   return InkWell(
                     onTap: () {
-                      if (mounted) {
-                        setState(() {
-                          _selectedIcon = icon;
-                        });
-                      }
+                      if (mounted) setState(() => _selectedIcon = icon);
                       Navigator.of(context).pop();
                     },
                     child: Container(
                       padding: EdgeInsets.all(8),
                       decoration: BoxDecoration(
-                        
-                        color: _selectedIcon.codePoint == icon.codePoint
-                            ? Colors.grey[300]
-                            : Colors.transparent,
+                        color: _selectedIcon.codePoint == icon.codePoint ? Colors.grey[300] : Colors.transparent,
                         borderRadius: BorderRadius.circular(8),
                       ),
-                      child: Icon(
-                        icon,
-                        size: 32,
-                        color: Colors.black,
-                      ),
+                      child: Icon(icon, size: 32, color: Colors.black),
                     ),
                   );
                 }).toList(),
@@ -781,15 +782,8 @@ class DeviceInfoScreenState extends State<DeviceInfoScreen> {
           ),
           actions: <Widget>[
             TextButton(
-              onPressed: () {
-                Navigator.of(context).pop();
-              },
-              child: Text(
-                'Cancel',
-                style: GoogleFonts.jaldi(
-                  textStyle: TextStyle(fontSize: 18, color: Colors.black87),
-                ),
-              ),
+              onPressed: () => Navigator.of(context).pop(),
+              child: Text('Cancel', style: GoogleFonts.jaldi(textStyle: TextStyle(fontSize: 18, color: Colors.black87))),
             ),
           ],
         );
@@ -797,56 +791,44 @@ class DeviceInfoScreenState extends State<DeviceInfoScreen> {
     );
   }
 
-  // List of common icons for devices
   List<IconData> _getCommonIcons() {
+ main
     return const [
       Icons.light, Icons.tv, Icons.power, Icons.kitchen,
           Icons.speaker, Icons.laptop, Icons.ac_unit, Icons.microwave,Icons.coffee_maker,Icons.radio_button_checked,
           Icons.thermostat,Icons.doorbell,Icons.camera,Icons.sensor_door,Icons.lock,Icons.door_sliding,Icons.local_laundry_service,
           Icons.dining,Icons.rice_bowl,Icons.wind_power,Icons.router,Icons.outdoor_grill,Icons.air,Icons.alarm,
       
+    return [
+      Icons.lightbulb_outline, Icons.power_outlined, Icons.power_settings_new, Icons.ac_unit_outlined,
+      Icons.tv_outlined, Icons.air_outlined, Icons.device_thermostat, Icons.kitchen,
+      Icons.water_drop_outlined, Icons.microwave_outlined, Icons.coffee_maker_outlined, Icons.speaker_outlined,
+      Icons.computer_outlined, Icons.router_outlined, Icons.videogame_asset_outlined, Icons.camera_outlined,
+      Icons.shower_outlined, Icons.local_laundry_service_outlined, Icons.devices_other_outlined,
+ wout_notif
     ];
   }
 
   @override
   Widget build(BuildContext context) {
-    print("Building DeviceInfoScreen - RoomController text: ${_roomController.text}, RoomNames: $_roomNames"); // Debug print
+    print("Building DeviceInfoScreen - RoomController text: ${_roomController.text}, RoomNames: $_roomNames"); 
     return Scaffold(
       backgroundColor: const Color(0xFFE9E7E6),
       appBar: AppBar(
-        backgroundColor: const Color(0xFFE9E7E6), // Match scaffold background
-        elevation: 0, // No shadow
+        backgroundColor: const Color(0xFFE9E7E6), 
+        elevation: 0, 
         leading: IconButton(
-          icon: Transform.translate(
-        offset: Offset(5, 0),
-          child: Icon(Icons.arrow_back, size: 50, color: Colors.black), 
-          ),// Adjusted size for visibility
+          icon: Transform.translate(offset: Offset(5, 0), child: Icon(Icons.arrow_back, size: 50, color: Colors.black)),
           onPressed: () => Navigator.of(context).pop(),
         ),
-      
          title: Transform.translate(
-      offset: Offset(2, 5),
-        child: Text(
-          _currentDeviceName,
-          style: GoogleFonts.jaldi(
-            textStyle: TextStyle(fontSize: 23, fontWeight: FontWeight.bold, color: Colors.black),
-          ),
-          overflow: TextOverflow.ellipsis,
-        ),
+            offset: Offset(2, 5),
+            child: Text(_currentDeviceName, style: GoogleFonts.jaldi(textStyle: TextStyle(fontSize: 23, fontWeight: FontWeight.bold, color: Colors.black)), overflow: TextOverflow.ellipsis),
          ),
         actions: [
           _isRefreshing
-              ? Padding(
-                  padding: const EdgeInsets.all(12.0),
-                  child: SizedBox(width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.black)),
-                )
-              : IconButton(
-                     icon: Transform.translate(
-                offset: Offset(-20, 5), 
-                  child: Icon(Icons.refresh, color: Colors.black, size: 30,),
-                     ),
-                  onPressed: _handleRefresh,
-                ),
+              ? Padding(padding: const EdgeInsets.all(12.0), child: SizedBox(width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.black)))
+              : IconButton(icon: Transform.translate(offset: Offset(-20, 5), child: Icon(Icons.refresh, color: Colors.black, size: 30,)), onPressed: _handleRefresh),
         ],
       ),
       body: SafeArea(
@@ -856,230 +838,94 @@ class DeviceInfoScreenState extends State<DeviceInfoScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // Removed manual back button and title as they are now in AppBar
-                // SizedBox(height: 8),
-                // Transform.translate(...)
-                // SizedBox(height: 30), 
-                // Device Status
-                Container( // Removed Transform.translate
+                Container(
                     padding: EdgeInsets.all(20),
-                    decoration: BoxDecoration( //container
-                      color: Colors.grey[350],
-                      borderRadius: BorderRadius.circular(12),
-                    ),
+                    decoration: BoxDecoration(color: Colors.grey[350], borderRadius: BorderRadius.circular(12)),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Row(
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
-                            Flexible( // Added Flexible to prevent overflow
+                            Flexible(
                               child: Row(
                                 children: [
-                                  Icon(
-                                    _getIconForDevice(_currentDeviceName), // icon status design
-                                    size: 30,
-                                    color: _isDeviceOn ? Colors.black : Colors.grey,
-                                  ),
+                                  Icon(_getIconForDevice(_currentDeviceName), size: 30, color: _isDeviceOn ? Colors.black : Colors.grey),
                                   SizedBox(width: 12),
-                                  Flexible( // Added Flexible to prevent overflow
-                                    child: Text(
-                                      _currentDeviceName, // Use state variable
-                                      style: TextStyle(
-                                        fontSize: 22,
-                                        fontWeight: FontWeight.bold,
-                                      ),
-                                      overflow: TextOverflow.ellipsis, // Handle text overflow
-                                    ),
-                                  ),
+                                  Flexible(child: Text(_currentDeviceName, style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold), overflow: TextOverflow.ellipsis)),
                                 ],
                               ),
                             ),
                             Switch(
                               value: _isDeviceOn,
-                              onChanged: (value) {
-                                _toggleDeviceStatus(value);
-                              },
-                              activeColor: Colors.white,
-                              activeTrackColor: Colors.black,
-                              inactiveThumbColor: Colors.white,
-                              inactiveTrackColor: Colors.black,
+                              onChanged: (value) { _toggleDeviceStatus(value); },
+                              activeColor: Colors.white, activeTrackColor: Colors.black,
+                              inactiveThumbColor: Colors.white, inactiveTrackColor: Colors.black,
                             ),
                           ],
                         ),
                         SizedBox(height: 20),
-                        Text(
-                          "Current Status",
-                          style: GoogleFonts.inter(
-                            fontSize: 16,
-                            color: Colors.grey[700],
-                          ),
-                        ),
-                        SizedBox(height: 8), // on off label
-                        Text(
-                          _isDeviceOn ? "ON" : "OFF",
-                          style: GoogleFonts.inter(
-                            fontSize: 24,
-                            fontWeight: FontWeight.bold,
-                            color: _isDeviceOn ? Colors.black : Colors.grey,
-                          ),
-                        ),
+                        Text("Current Status", style: GoogleFonts.inter(fontSize: 16, color: Colors.grey[700])),
+                        SizedBox(height: 8),
+                        Text(_isDeviceOn ? "ON" : "OFF", style: GoogleFonts.inter(fontSize: 24, fontWeight: FontWeight.bold, color: _isDeviceOn ? Colors.black : Colors.grey)),
                       ],
                     ),
                   ),
-                // Energy Usage
                 Transform.translate(
                   offset: Offset(0, 5),
-                  child: Row( // Use Row to place text and icon side-by-side
+                  child: Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Text(
-                        "Energy Usage",
-                        style: TextStyle(
-                          fontSize: 20,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                      Row( // Replaced PopupMenuButton with Row
-                        children: [
-                          Text(_selectedPeriod), // Display selected period
-                          IconButton(
-                            icon: Icon(Icons.calendar_month),
-                            onPressed: () => _showPeriodPicker(), // Call method to show period picker
-                          ),
-                        ],
-                      ),
+                      Text("Energy Usage", style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+                      Row(children: [ Text(_selectedPeriod), IconButton(icon: Icon(Icons.calendar_month), onPressed: () => _showPeriodPicker())]),
                     ],
                   ),
                 ),
-                // Energy Stats
                 SizedBox(height: 20),
                 Transform.translate(
                   offset: Offset(0, -15),
                   child: _isLoadingUsage
-                      ? Center(child: CircularProgressIndicator()) // Show loading indicator
-                      : Column( // Use a Column to display usage and cost vertically
-                          children: [
-                            _buildEnergyStatCard(
-                              title: "Total Usage",
-                              value: "${_totalUsageKwh.toStringAsFixed(2)} kWh", // Display total usage for selected period
-                              period: _selectedPeriod,
-                              icon: Icons.flash_on, // Use a relevant icon
-                            ),
-                            // Commented out Total Cost card as per user request
-                            /*
-                             _buildEnergyStatCard(
-                              title: "Total Cost",
-                              value: "₱${_totalElectricityCost.toStringAsFixed(2)}", // Display total cost for selected period
-                              period: _selectedPeriod,
-                              icon: Icons.attach_money,
-                            ),
-                            */
-                          ],
-                        ),
+                      ? Center(child: CircularProgressIndicator())
+                      : Column(children: [
+                            _buildEnergyStatCard(title: "Total Usage", value: "${_totalUsageKwh.toStringAsFixed(2)} kWh", period: _selectedPeriod, icon: Icons.flash_on),
+                          ]),
                 ),
                  Transform.translate(
                   offset: Offset(0, -9),
-                  child: _buildEnergyStatCard(
-                    title: "Estimated Cost",
-                    value: "₱${(_totalElectricityCost).toStringAsFixed(2)}", // Display fetched kwhrcost
-                    period: _selectedPeriod, // Use the selected period for context
-                    icon: Icons.attach_money,
-                  ),
+                  child: _buildEnergyStatCard(title: "Estimated Cost", value: "₱${(_totalElectricityCost).toStringAsFixed(2)}", period: _selectedPeriod, icon: Icons.attach_money),
                 ),
-              
-                // Removed the else block that displayed daily and total usage
-                 
-                Container( // Removed Transform.translate
-                    margin: const EdgeInsets.only(bottom: 0, top: 0), // Added top margin
+                Container( 
+                    margin: const EdgeInsets.only(bottom: 0, top: 0), 
                     padding: EdgeInsets.all(16),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(12),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withOpacity(0.05),
-                          blurRadius: 10,
-                          offset: Offset(0, 4),
-                        ),
-                      ],
-                    ),
-                    
+                    decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12), boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10, offset: Offset(0, 4))]),
                     child: Row(
                       children: [
-
-                        Container(
-                          padding: EdgeInsets.all(10),
-                          decoration: BoxDecoration(
-                            color: Colors.blue.withOpacity(0.1),
-                            borderRadius: BorderRadius.circular(10),
-                          ),
-                          child: Icon(Icons.attach_money, color: Colors.blue),
-                        ),
+                        Container(padding: EdgeInsets.all(10), decoration: BoxDecoration(color: Colors.blue.withOpacity(0.1), borderRadius: BorderRadius.circular(10)), child: Icon(Icons.attach_money, color: Colors.blue)),
                         SizedBox(width: 16),
                         Expanded(
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Text(
-                                "kWh Rate",
-                                style: GoogleFonts.inter(
-                                  fontSize: 14,
-                                  color: Colors.grey[600],
-                                ),
-                              ),
+                              Text("kWh Rate", style: GoogleFonts.inter(fontSize: 14, color: Colors.grey[600])),
                               SizedBox(height: 4),
-                              TextField(
-                                controller: _kWhRateController,
-                                keyboardType: TextInputType.numberWithOptions(decimal: true),
-                                decoration: InputDecoration(
-                                  isDense: true,
-                                  contentPadding: EdgeInsets.symmetric(vertical: 8, horizontal: 8),
-                                  
-                                  hintText: "Enter KWH rate",
-                                  suffixText: "₱/kWh",
-                                ),
-                              ),
+                              TextField(controller: _kWhRateController, keyboardType: TextInputType.numberWithOptions(decimal: true), decoration: InputDecoration(isDense: true, contentPadding: EdgeInsets.symmetric(vertical: 8, horizontal: 8), hintText: "Enter KWH rate", suffixText: "₱/kWh")),
                             ],
                           ),
                         ),
                       ],
                     ),
                   ),
-                SizedBox(height: 24), // Add some spacing before the button
+                SizedBox(height: 24), 
                 ElevatedButton(
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.white,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(0),
-                      side: BorderSide(color: Colors.black, width: 1),
-                    ),
-                    minimumSize: Size(double.infinity, 50), // Make button full width
-                  ),
+                  style: ElevatedButton.styleFrom(backgroundColor: Colors.white, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(0), side: BorderSide(color: Colors.black, width: 1)), minimumSize: Size(double.infinity, 50)),
                   onPressed: () {
-                    // Navigate to the detailed usage screen
-                    Navigator.push(
-  context,
-  MaterialPageRoute(
-    builder: (context) {
-      final userId = _auth.currentUser?.uid;
-      if (userId == null) {
-        // Handle the case where the user is not logged in,
-        // though this is unlikely if they are on this screen.
-        // You could return a placeholder widget or show an error.
-        return Scaffold(
-          appBar: AppBar(title: Text("Error")),
-          body: Center(child: Text("User not logged in.")),
-        );
-      }
-      return DeviceUsage(
-        userId: userId,
-        applianceId: widget.applianceId,
-      );
-    },
-  ),
-);
+                    Navigator.push(context, MaterialPageRoute(builder: (context) {
+                      final userId = _auth.currentUser?.uid;
+                      if (userId == null) return Scaffold(appBar: AppBar(title: Text("Error")), body: Center(child: Text("User not logged in.")));
+                      return DeviceUsage(userId: userId, applianceId: widget.applianceId);
+                    }));
                   },
+ main
                   child: Text(
                     'View Detailed Usage',
                     style: GoogleFonts.judson(
@@ -1095,8 +941,13 @@ class DeviceInfoScreenState extends State<DeviceInfoScreen> {
                     fontSize: 20,
                     fontWeight: FontWeight.bold,
                   ),
+                  child: Text('View Detailed Usage', style: GoogleFonts.judson(fontSize: 20, color: Colors.black)),
+ wout_notif
                 ),
+                SizedBox(height: 24), 
+                Text("Appliance Details", style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
                 SizedBox(height: 16),
+ main
                 
                 
                 TextField(
@@ -1121,121 +972,48 @@ class DeviceInfoScreenState extends State<DeviceInfoScreen> {
                   ),
                 ),
 
+
+                TextField(controller: _nameController, decoration: InputDecoration(filled: true, fillColor: Colors.white, labelText: 'Appliance Name', labelStyle: GoogleFonts.jaldi(fontSize: 20), border: OutlineInputBorder())),
+ wout_notif
                 SizedBox(height: 8),
-                // Room Name Dropdown with Add Button
                 Row(
-                  crossAxisAlignment: CrossAxisAlignment.center,
                   children: [
                     Expanded(
                       child: DropdownButtonFormField<String>(
-                        decoration: InputDecoration(
-                          filled: true,
-                          fillColor: Colors.white,
-                          labelText: 'Room Name',
-                          labelStyle: GoogleFonts.jaldi(
-                            textStyle: TextStyle(fontSize: 20),
-                          ),
-                          border: OutlineInputBorder(),
-                        ),
-                        dropdownColor: Colors.grey[200],
-                        style: GoogleFonts.jaldi(
-                          textStyle: TextStyle(fontSize: 18, color: Colors.black87),
-                        ),
-                        value: _selectedRoom, // Use the new state variable
-                        items: _roomNames.map<DropdownMenuItem<String>>((String value) {
-                          return DropdownMenuItem<String>(
-                            value: value,
-                            child: Text(value),
-                          );
-                        }).toList(),
-                        onChanged: (String? newValue) {
-                          if (mounted) {
-                            setState(() {
-                              _selectedRoom = newValue; // Update the new state variable
-                              _roomController.text = newValue ?? ''; // Keep controller in sync
-                            });
-                          }
-                        }
+                        decoration: InputDecoration(filled: true, fillColor: Colors.white, labelText: 'Room Name', labelStyle: GoogleFonts.jaldi(textStyle: TextStyle(fontSize: 20)), border: OutlineInputBorder()),
+                        dropdownColor: Colors.grey[200], style: GoogleFonts.jaldi(textStyle: TextStyle(fontSize: 18, color: Colors.black87)),
+                        value: _selectedRoom, 
+                        items: _roomNames.map<DropdownMenuItem<String>>((String value) => DropdownMenuItem<String>(value: value, child: Text(value))).toList(),
+                        onChanged: (String? newValue) { if (mounted) setState(() { _selectedRoom = newValue; _roomController.text = newValue ?? ''; }); }
                       ),
                     ),
-                    SizedBox(width: 8), // Add some spacing
-                    IconButton(
-                      icon: Icon(Icons.add, size: 30, color: Colors.black),
-                      onPressed: _addRoom, // Call the _addRoom method
-                    ),
+                    SizedBox(width: 8), 
+                    IconButton(icon: Icon(Icons.add, size: 30, color: Colors.black), onPressed: _addRoom),
                   ],
                 ),
                 SizedBox(height: 8),
-                // Device Type Dropdown
                 DropdownButtonFormField<String>(
-                  decoration: InputDecoration(
-                    filled: true,
-                    fillColor: Colors.white,
-                    labelText: 'Device Type',
-                    labelStyle: GoogleFonts.jaldi(
-                      textStyle: TextStyle(fontSize: 20),
-                    ),
-                    border: OutlineInputBorder(),
-                  ),
-                  dropdownColor: Colors.grey[200],
-                  style: GoogleFonts.jaldi(
-                    textStyle: TextStyle(fontSize: 18, color: Colors.black87),
-                  ),
+                  decoration: InputDecoration(filled: true, fillColor: Colors.white, labelText: 'Device Type', labelStyle: GoogleFonts.jaldi(textStyle: TextStyle(fontSize: 20)), border: OutlineInputBorder()),
+                  dropdownColor: Colors.grey[200], style: GoogleFonts.jaldi(textStyle: TextStyle(fontSize: 18, color: Colors.black87)),
                   value: _deviceType,
-                  items: ['Light', 'Socket'].map((type) {
-                    return DropdownMenuItem(
-                      value: type,
-                      child: Text(type),
-                    );
-                  }).toList(),
-                  onChanged: (value) {
-                    if (mounted) {
-                      setState(() {
-                        _deviceType = value!;
-                        _typeController.text = value; // Keep the controller in sync
-                      });
-                    }
-                  },
+                  items: ['Light', 'Socket'].map((type) => DropdownMenuItem(value: type, child: Text(type))).toList(),
+                  onChanged: (value) { if (mounted) setState(() { _deviceType = value!; _typeController.text = value; }); },
                 ),
                 SizedBox(height: 8),
-                
                 Transform.translate(
                     offset: Offset(-0, -0),
-               child:  Row(
-                  children: [
-                    SizedBox(width: 16),
-                    Icon(_selectedIcon),
-                    TextButton(
-                      
-                      onPressed: _showIconPickerDialog, 
-                      child: Text('Change Icon',
-                      style: GoogleFonts.jaldi(
-                              fontSize: 20,
-                              fontWeight: FontWeight.w500,
-                              color: Colors.black,
-                      ),
+                    child: Row(
+                      children: [
+                        SizedBox(width: 16), Icon(_selectedIcon),
+                        TextButton(onPressed: _showIconPickerDialog, child: Text('Change Icon', style: GoogleFonts.jaldi(fontSize: 20, fontWeight: FontWeight.w500, color: Colors.black))),
+                      ],
                     ),
-                    ),
-                  ],
-                ),
                 ),
                 SizedBox(height: 5),
                 ElevatedButton(
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.white,
-                    
-    shape: RoundedRectangleBorder(
-      borderRadius: BorderRadius.circular(0),
-      side: BorderSide(color: Colors.black, width: 1),
-    )
-                  ),
+                  style: ElevatedButton.styleFrom(backgroundColor: Colors.white, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(0), side: BorderSide(color: Colors.black, width: 1))),
                   onPressed: _updateDeviceDetails,
-                  child: Text('Save Changes',
-                  style: GoogleFonts.judson(
-                      fontSize: 20,
-                      color: Colors.black,
-                  ),
-                      ),
+                  child: Text('Save Changes', style: GoogleFonts.judson(fontSize: 20, color: Colors.black)),
                 ),
               ],
             ),
@@ -1247,57 +1025,22 @@ class DeviceInfoScreenState extends State<DeviceInfoScreen> {
 
   Widget _buildEnergyStatCard({required String title, required String value, required String period, required IconData icon}) {
     return Container(
-      margin: const EdgeInsets.only(bottom: 10), // Added margin for spacing
+      margin: const EdgeInsets.only(bottom: 10), 
       padding: EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.05),
-            blurRadius: 10,
-            offset: Offset(0, 4),
-          ),
-        ],
-      ),
+      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12), boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10, offset: Offset(0, 4))]),
       child: Row(
         children: [
-          Container(
-            padding: EdgeInsets.all(10),
-            decoration: BoxDecoration(
-              color: Colors.blue.withOpacity(0.1),
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: Icon(icon, color: Colors.blue),
-          ),
+          Container(padding: EdgeInsets.all(10), decoration: BoxDecoration(color: Colors.blue.withOpacity(0.1), borderRadius: BorderRadius.circular(10)), child: Icon(icon, color: Colors.blue)),
           SizedBox(width: 16),
-          Expanded( // Added Expanded to prevent overflow if text is long
+          Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  title,
-                  style: GoogleFonts.inter(
-                    fontSize: 14,
-                    color: Colors.grey[600],
-                  ),
-                ),
+                Text(title, style: GoogleFonts.inter(fontSize: 14, color: Colors.grey[600])),
                 SizedBox(height: 4),
-                Text(
-                  value,
-                  style: GoogleFonts.inter(
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
+                Text(value, style: GoogleFonts.inter(fontSize: 18, fontWeight: FontWeight.bold)),
                 SizedBox(height: 2),
-                Text(
-                  period,
-                  style: GoogleFonts.inter(
-                    fontSize: 12,
-                    color: Colors.grey[500],
-                  ),
-                ),
+                Text(period, style: GoogleFonts.inter(fontSize: 12, color: Colors.grey[500])),
               ],
             ),
           ),
@@ -1306,133 +1049,49 @@ class DeviceInfoScreenState extends State<DeviceInfoScreen> {
     );
   }
 
-  // Helper method to get icon for usage period
   IconData _getIconForUsagePeriod(String period) {
-    switch (period) {
-      case 'daily':
-        return Icons.query_stats;
-      case 'weekly':
-        return Icons.calendar_view_week;
-      case 'monthly':
-        return Icons.calendar_view_month;
-      case 'yearly':
-        return Icons.calendar_today;
-      default:
-        return Icons.query_stats;
+     switch (period) {
+      case 'daily': return Icons.query_stats;
+      case 'weekly': return Icons.calendar_view_week;
+      case 'monthly': return Icons.calendar_view_month;
+      case 'yearly': return Icons.calendar_today;
+      default: return Icons.query_stats;
     }
   }
 
   IconData _getIconForDevice(String deviceName) {
-    // Normalize deviceName for robust matching
     final name = deviceName.toLowerCase();
-    if (name.contains("light")) {
-      return Icons.lightbulb_outline; // Using a more common light icon
-    } else if (name.contains("socket") || name.contains("plug")) {
-      return Icons.power_outlined;
-    } else if (name.contains("ac") || name.contains("air conditioner") || name.contains("aircon")) {
-      return Icons.ac_unit_outlined;
-    } else if (name.contains("tv") || name.contains("television")) {
-      return Icons.tv_outlined;
-    } else if (name.contains("fan")) {
-      return Icons.air_outlined;
-    }
-    return Icons.devices_other_outlined; // A generic fallback
+    if (name.contains("light")) return Icons.lightbulb_outline;
+    if (name.contains("socket") || name.contains("plug")) return Icons.power_outlined;
+    if (name.contains("ac") || name.contains("air conditioner") || name.contains("aircon")) return Icons.ac_unit_outlined;
+    if (name.contains("tv") || name.contains("television")) return Icons.tv_outlined;
+    if (name.contains("fan")) return Icons.air_outlined;
+    return Icons.devices_other_outlined;
   }
 
-  // calendar picker function
   void _showPeriodPicker() {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
         backgroundColor: Colors.white,
-        title: Text('Select Period',
-          style: TextStyle(
-            fontSize: 20,
-            fontWeight: FontWeight.bold,
-          ),
-        ),
+        title: Text('Select Period', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            ListTile(
-              tileColor: Colors.white,
-              title: Text('Daily'),
-              onTap: () {
-                if (mounted) {
-                  setState(() {
-                    _selectedPeriod = 'Daily';
-                  });
-                }
-                _listenToPeriodicUsageData(); // Changed from _calculateTotalUsageForPeriod
-                Navigator.pop(context);
-              },
-            ),
-            ListTile(
-              tileColor: Colors.white,
-              title: Text('Weekly'),
-              onTap: () {
-                if (mounted) {
-                  setState(() {
-                    _selectedPeriod = 'Weekly';
-                  });
-                }
-                _listenToPeriodicUsageData(); // Changed from _calculateTotalUsageForPeriod
-                Navigator.pop(context);
-              },
-            ),
-            ListTile(
-              tileColor: Colors.white,
-              title: Text('Monthly'),
-              onTap: () {
-                if (mounted) {
-                  setState(() {
-                    _selectedPeriod = 'Monthly';
-                  });
-                }
-                _listenToPeriodicUsageData(); // Changed from _calculateTotalUsageForPeriod
-                Navigator.pop(context);
-              },
-            ),
-            ListTile(
-              tileColor: Colors.white,
-              title: Text('Yearly'),
-              onTap: () {
-                if (mounted) {
-                  setState(() {
-                    _selectedPeriod = 'Yearly';
-                  });
-                }
-                _listenToPeriodicUsageData(); // Changed from _calculateTotalUsageForPeriod
-                Navigator.pop(context);
-              },
-            ),
+            ListTile(title: Text('Daily'), onTap: () { if (mounted) setState(() => _selectedPeriod = 'Daily'); _listenToPeriodicUsageData(); Navigator.pop(context); }),
+            ListTile(title: Text('Weekly'), onTap: () { if (mounted) setState(() => _selectedPeriod = 'Weekly'); _listenToPeriodicUsageData(); Navigator.pop(context); }),
+            ListTile(title: Text('Monthly'), onTap: () { if (mounted) setState(() => _selectedPeriod = 'Monthly'); _listenToPeriodicUsageData(); Navigator.pop(context); }),
+            ListTile(title: Text('Yearly'), onTap: () { if (mounted) setState(() => _selectedPeriod = 'Yearly'); _listenToPeriodicUsageData(); Navigator.pop(context); }),
           ],
         ),
       ),
     );
   }
 
-  // Function to calculate immediate cost
-  /*
-  double _calculateImmediateCost() {
-    // Extract the numeric value from _currentDeviceUsage (e.g., "0.50 kWh" -> 0.50)
-    final usageString = _currentDeviceUsage.replaceAll(' kWh', '');
-    final usageKwh = double.tryParse(usageString) ?? 0.0;
-
-    // Get the kWh rate from the controller
-    final kWhRate = double.tryParse(_kWhRateController.text) ?? 0.0;
-
-    return usageKwh * kWhRate;
-  }
-  */
-
-  // Function to calculate average daily, weekly, monthly, and yearly usages
   Future<Map<String, double>> getAverageUsages() async {
     try {
       final now = DateTime.now();
-      final userId = _auth.currentUser!.uid; // Assuming user is authenticated
-
-      // Calculate date ranges for different periods
+      final userId = _auth.currentUser!.uid;
       final today = DateTime(now.year, now.month, now.day);
       final startOfWeek = now.subtract(Duration(days: now.weekday - 1));
       final endOfWeek = startOfWeek.add(Duration(days: 6));
@@ -1440,176 +1099,107 @@ class DeviceInfoScreenState extends State<DeviceInfoScreen> {
       final endOfMonth = DateTime(now.year, now.month + 1, 0);
       final startOfYear = DateTime(now.year, 1, 1);
       final endOfYear = DateTime(now.year, 12, 31);
-
-      // Get average daily usage for each period
       final averageDaily = await _getAverageDailyUsageForPeriod(today, today);
       final averageWeekly = await _getAverageDailyUsageForPeriod(startOfWeek, endOfWeek);
       final averageMonthly = await _getAverageDailyUsageForPeriod(startOfMonth, endOfMonth);
       final averageYearly = await _getAverageDailyUsageForPeriod(startOfYear, endOfYear);
-
-      return {
-        'daily': averageDaily,
-        'weekly': averageWeekly,
-        'monthly': averageMonthly,
-        'yearly': averageYearly,
-      };
+      return {'daily': averageDaily, 'weekly': averageWeekly, 'monthly': averageMonthly, 'yearly': averageYearly};
     } catch (e) {
-      print('Error getting average usages: $e');
-      if (mounted) {
-        setState(() {
-          _averageUsages = {
-            'daily': 0.0,
-            'weekly': 0.0,
-            'monthly': 0.0,
-            'yearly': 0.0,
-          };
-        });
-      }
-      return {
-        'daily': 0.0,
-        'weekly': 0.0,
-        'monthly': 0.0,
-        'yearly': 0.0,
-      };
+      if (mounted) setState(() => _averageUsages = {'daily': 0.0, 'weekly': 0.0, 'monthly': 0.0, 'yearly': 0.0});
+      return {'daily': 0.0, 'weekly': 0.0, 'monthly': 0.0, 'yearly': 0.0};
     }
   }
 
-  // Function to get average daily usage (kWh) for a specific period
   Future<double> _getAverageDailyUsageForPeriod(DateTime startDate, DateTime endDate) async {
-    try {
+     try {
       double totalKwhr = 0.0;
       int numberOfDaysWithUsage = 0;
-      final userId = _auth.currentUser!.uid; // Assuming user is authenticated
-      final dayUsageCollectionRef = FirebaseFirestore.instance
-          .collection('users')
-          .doc(userId)
-          .collection('appliances')
-          .doc(widget.applianceId)
-          .collection('yearly_usage');
-
-      // Iterate through years within the date range
+      final userId = _auth.currentUser!.uid; 
+      final dayUsageCollectionRef = FirebaseFirestore.instance.collection('users').doc(userId).collection('appliances').doc(widget.applianceId).collection('yearly_usage');
       for (int year = startDate.year; year <= endDate.year; year++) {
         final yearlyDocRef = dayUsageCollectionRef.doc(year.toString());
         final monthlySnapshots = await yearlyDocRef.collection('monthly_usage').get();
-
         for (final monthlyDoc in monthlySnapshots.docs) {
           final weekSnapshots = await monthlyDoc.reference.collection('week_usage').get();
-
           for (final weekDoc in weekSnapshots.docs) {
             final daySnapshots = await weekDoc.reference.collection('day_usage').get();
-
             for (final dayDoc in daySnapshots.docs) {
-              final dateString = dayDoc.id; // e.g., '2023-10-27'
+              final dateString = dayDoc.id; 
               try {
                 final dateParts = dateString.split('-');
                 final dayDate = DateTime(int.parse(dateParts[0]), int.parse(dateParts[1]), int.parse(dateParts[2]));
-
-                // Check if the day is within the specified date range
                 if (dayDate.isAfter(startDate.subtract(Duration(days: 1))) && dayDate.isBefore(endDate.add(Duration(days: 1)))) {
-                  final dayData = dayDoc.data();
-                  final dailyKwhr = (dayData['kwh'] is num) ? (dayData['kwh'] as num).toDouble() : 0.0; // Use 'kwh' field
-                  totalKwhr += dailyKwhr;
-                  if (dailyKwhr > 0) {
-                    numberOfDaysWithUsage++;
+                  final Object rawDayData = dayDoc.data();
+                  if (rawDayData is Map<String, dynamic>) {
+                    final Map<String, dynamic> dayData = rawDayData;
+                    dynamic kwhValue = dayData['kwh']; // Get the value first
+                    double dailyKwhr = 0.0;
+                    if (kwhValue is num) {
+                      dailyKwhr = kwhValue.toDouble();
+                    }
+                    totalKwhr += dailyKwhr;
+                    if (dailyKwhr > 0) numberOfDaysWithUsage++;
+                  } else {
+                    // Handle case where data is null or not a map, though 'exists' should cover null.
+                    print("Warning: dayData for $dateString is null or not a Map, though document exists.");
                   }
                 }
-              } catch (e) {
-                print('Error parsing date from document ID $dateString: $e');
-              }
+              } catch (e) { print('Error parsing date from document ID $dateString or processing dayData: $e'); }
             }
           }
         }
       }
-
-      if (numberOfDaysWithUsage > 0) {
-        return totalKwhr / numberOfDaysWithUsage;
-      } else {
-        return 0.0;
-      }
-    } catch (e) {
-      print('Error getting average daily usage for period: $e');
-      return 0.0;
+      return numberOfDaysWithUsage > 0 ? totalKwhr / numberOfDaysWithUsage : 0.0;
+    } catch (e) { 
+      print("Error in _getAverageDailyUsageForPeriod: $e");
+      return 0.0; 
     }
   }
-
-
-  // Removed sumallkwh as its functionality is covered by UsageService
 
   Future<void> _handleRefresh() async {
     final user = _auth.currentUser;
     if (user == null) {
-      if (mounted) { // Check if widget is still in the tree
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('User not authenticated. Cannot refresh.')),
-        );
-      }
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('User not authenticated. Cannot refresh.')));
       return;
     }
     if (_isRefreshing) return;
-
-    if (mounted) {
-      setState(() {
-        _isRefreshing = true;
-      });
-    }
-
+    if (mounted) setState(() => _isRefreshing = true);
     try {
-      print("DeviceInfoScreen: Manual refresh initiated for appliance ${widget.applianceId} by user ${user.uid}.");
+      // We need the kwhrRate. The wattage is fetched inside handleManualRefreshForAppliance.
+      double kwhrRate = double.tryParse(_kWhRateController.text) ?? DEFAULT_KWHR_RATE; 
+      // If _kWhRateController is not populated reliably, fetch from user doc or use a state variable like in homepage.
+      // For now, assuming _kWhRateController.text is the source of truth for the current rate on this screen.
+      // Alternatively, ensure _kwhrRate is a state variable updated from userDoc like in homepage.
+      // Let's assume _fetchUserKwhrRate (similar to homepage) should be called if _kWhRateController is not reliable.
+      // For this change, we'll proceed with _kWhRateController.text as the source.
 
-      DocumentSnapshot applianceSnap = await FirebaseFirestore.instance
-          .collection('users').doc(user.uid)
-          .collection('appliances').doc(widget.applianceId)
-          .get();
-      
-      double wattage = 0.0;
-      if (applianceSnap.exists && applianceSnap.data() != null) {
-        wattage = ((applianceSnap.data() as Map<String, dynamic>)['wattage'] as num?)?.toDouble() ?? 0.0;
-      } else {
-        print("DeviceInfoScreen: Could not fetch wattage for ${widget.applianceId} during refresh. Using 0.0.");
-      }
-      
-      double kwhrRate = double.tryParse(_kWhRateController.text) ?? DEFAULT_KWHR_RATE;
-
-      await _usageService.refreshApplianceUsage(
+      print("DeviceInfoScreen: Manual refresh for ${widget.applianceId} initiated by user ${user.uid}.");
+      await _usageService.handleManualRefreshForAppliance(
         userId: user.uid,
         applianceId: widget.applianceId,
-        kwhrRate: kwhrRate, 
-        wattage: wattage,
-        referenceDate: DateTime.now(),
+        kwhrRate: kwhrRate,
+        refreshTime: DateTime.now(),
       );
       
-      _listenToPeriodicUsageData();
-
-      if (mounted) { // Check mounted before showing SnackBar
-         ScaffoldMessenger.of(context).showSnackBar(
-           SnackBar(content: Text('$_currentDeviceName usage data refreshed!')),
-         );
-      }
-    } catch (e, s) {
-      print("DeviceInfoScreen: Error during manual refresh: $e");
-      print("DeviceInfoScreen: Stacktrace: $s");
-      if (mounted) { // Check mounted before showing SnackBar
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error refreshing data: $e'), backgroundColor: Colors.red),
-        );
-      }
+      // _listenToPeriodicUsageData() is still relevant as it fetches the specific period's data for this appliance.
+      _listenToPeriodicUsageData(); 
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$_currentDeviceName usage data refreshed!')));
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error refreshing data: $e'), backgroundColor: Colors.red));
     } finally {
-      if (mounted) {
-        setState(() {
-          _isRefreshing = false;
-        });
-      }
+      if (mounted) setState(() => _isRefreshing = false);
     }
   }
 }
 
-// Extension to capitalize the first letter of a string
 extension StringExtension on String {
   String capitalize() {
     return "${this[0].toUpperCase()}${substring(1)}";
   }
 }
+ main
 
 // Removed _fetchLatestDailyUsage, sumallkwh, and sumallkwhr methods as they used the old path structure
 // and their functionality is either covered by _calculateTotalUsageForPeriod (for display)
 // or handled by UsageService (for calculation and storage)
+ wout_notif

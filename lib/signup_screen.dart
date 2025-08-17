@@ -238,6 +238,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
                           'username': _usernameController.text.trim(),
                           'address': _addressController.text.trim(),
                           'createdAt': Timestamp.now(), // Optional: add a timestamp
+                          'presentYear': DateTime.now().year.toString(), // Added presentYear field
                         });
 
                         // Create initial subcollections for the new user

@@ -11,7 +11,10 @@ plugins {
 android {
     namespace = "com.example.homesync"
     compileSdk = flutter.compileSdkVersion
+ main
     ndkVersion = "27.0.12077973"
+
+ wout_notif
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_11
