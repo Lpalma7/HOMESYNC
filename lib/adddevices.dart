@@ -76,6 +76,38 @@ class _AddDeviceScreenState extends State<AddDeviceScreen> {
 
   IconData selectedIcon = Icons.device_hub;
 
+  // Helper function to get IconData from codePoint
+  IconData _getIconFromCodePoint(int codePoint) {
+    final Map<int, IconData> iconMap = {
+      Icons.device_hub.codePoint: Icons.device_hub,
+      Icons.light.codePoint: Icons.light,
+      Icons.tv.codePoint: Icons.tv,
+      Icons.power.codePoint: Icons.power,
+      Icons.kitchen.codePoint: Icons.kitchen,
+      Icons.speaker.codePoint: Icons.speaker,
+      Icons.laptop.codePoint: Icons.laptop,
+      Icons.ac_unit.codePoint: Icons.ac_unit,
+      Icons.microwave.codePoint: Icons.microwave,
+      Icons.coffee_maker.codePoint: Icons.coffee_maker,
+      Icons.radio_button_checked.codePoint: Icons.radio_button_checked,
+      Icons.thermostat.codePoint: Icons.thermostat,
+      Icons.doorbell.codePoint: Icons.doorbell,
+      Icons.camera.codePoint: Icons.camera,
+      Icons.sensor_door.codePoint: Icons.sensor_door,
+      Icons.lock.codePoint: Icons.lock,
+      Icons.door_sliding.codePoint: Icons.door_sliding,
+      Icons.local_laundry_service.codePoint: Icons.local_laundry_service,
+      Icons.dining.codePoint: Icons.dining,
+      Icons.rice_bowl.codePoint: Icons.rice_bowl,
+      Icons.wind_power.codePoint: Icons.wind_power,
+      Icons.router.codePoint: Icons.router,
+      Icons.outdoor_grill.codePoint: Icons.outdoor_grill,
+      Icons.air.codePoint: Icons.air,
+      Icons.alarm.codePoint: Icons.alarm,
+    };
+    return iconMap[codePoint] ?? Icons.device_hub;
+  }
+
   // validation errors
   String? applianceNameError;
   String? wattageError;
@@ -113,7 +145,7 @@ class _AddDeviceScreenState extends State<AddDeviceScreen> {
       selectedRoom = widget.deviceData!['roomName'] as String?;
       deviceType = widget.deviceData!['deviceType'] as String? ?? 'Light';
       selectedRelay = widget.deviceData!['relay'] as String?;
-      selectedIcon = IconData(widget.deviceData!['icon'] as int? ?? Icons.device_hub.codePoint, fontFamily: 'MaterialIcons');
+      selectedIcon = _getIconFromCodePoint(widget.deviceData!['icon'] as int? ?? Icons.device_hub.codePoint);
 
       // Parse start and end times
       final startTimeString = widget.deviceData!['startTime'] as String?;
@@ -1418,7 +1450,7 @@ class _AddDeviceScreenState extends State<AddDeviceScreen> {
         if (roomName != null && roomName.isNotEmpty) {
           fetchedRooms.add(roomName);
           fetchedIcons[roomName] = iconCodePoint != null
-              ? IconData(iconCodePoint, fontFamily: 'MaterialIcons')
+              ? _getIconFromCodePoint(iconCodePoint)
               : Icons.home;
         }
       }
