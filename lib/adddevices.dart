@@ -266,13 +266,43 @@ class _AddDeviceScreenState extends State<AddDeviceScreen> {
                     ),
                   ),
 
-                  // Required text
-                  _buildRequiredTextField(
-                    applianceNameController,
-                    "Appliance Name",
-                    Icons.device_hub,
-                    errorText: applianceNameError
+                  // Appliance Name section with Add button
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Container(
+                          padding: const EdgeInsets.only(bottom: 5, top: 10),
+                          child: TextFormField(
+                            controller: applianceNameController,
+                            readOnly: true, 
+                            decoration: InputDecoration(
+                              filled: true,
+                              fillColor: Colors.white,
+                              prefixIcon: Icon(Icons.device_hub, size: 30, color: Colors.black),
+                              labelText: "Appliance Name",
+                              labelStyle: GoogleFonts.jaldi(
+                                textStyle: TextStyle(fontSize: 20),
+                                color: Colors.grey,
+                              ),
+                              border: OutlineInputBorder(),
+                              errorText: applianceNameError,
+                            ),
+                            validator: (value) {
+                              if (value == null || value.isEmpty) {
+                                return "Appliance Name is required";
+                              }
+                              return null;
+                            },
+                          ),
+                        ),
+                      ),
+                      IconButton(
+                        icon: Icon(Icons.add, size: 30, color: Colors.black),
+                        onPressed: _addApplianceDialog,
+                      )
+                    ],
                   ),
+
                   _buildRequiredTextField(
                     wattageController,
                     "Watts",
@@ -721,15 +751,13 @@ class _AddDeviceScreenState extends State<AddDeviceScreen> {
                     child: GridView.count(
                       crossAxisCount: 4,
                       shrinkWrap: true,
-                      children: [
+                      children: const [
                         Icons.living, Icons.bed, Icons.kitchen, Icons.dining,
-                        Icons.bathroom, Icons.meeting_room, Icons.workspace_premium, Icons.chair,
-                        Icons.stairs, Icons.garage, Icons.yard, Icons.balcony,
+                        Icons.bathroom, Icons.meeting_room,Icons.garage, Icons.local_library, Icons.stairs,
                       ].map((icon) {
                         return IconButton(
                           icon: Icon(
                             icon,
-                            color: roomIconSelected == icon ? Theme.of(context).colorScheme.secondary : Colors.black,
                           ),
                           onPressed: () {
                             setDialogState(() {
@@ -779,6 +807,168 @@ class _AddDeviceScreenState extends State<AddDeviceScreen> {
     );
   }
 
+  
+  void _addApplianceDialog() {
+    TextEditingController modelNameInput = TextEditingController();
+    String? selectedBrand;
+    String? selectedApplianceType;
+
+    // Smart brands list
+    final List<String> smartBrands = [
+      'Samsung', 'LG', 'Xiaomi', 'Philips', 'Sony', 'Panasonic', 
+      'TCL', 'Haier', 'Whirlpool', 'Electrolux', 'Bosch', 'GE',
+      'KitchenAid', 'Frigidaire', 'Maytag', 'Fisher & Paykel'
+    ];
+
+    // Appliance types list
+    final List<String> applianceTypes = [
+      'TV', 'Air Conditioner', 'Refrigerator', 'Washing Machine',
+      'Microwave', 'Dishwasher', 'Coffee Maker', 'Rice Cooker',
+      'Electric Fan', 'Heater', 'Speaker', 'Plugs', 'Air Fryers',
+      'Light', 'Router', 'Home Hubs', 'Air Purifiers', 'Alarm Clocks',
+      'Doorbell', 'CCTV', 'Smoke Alarm', 'Garage Door', 'Lock', 'Vacuums', 'Lamp',
+
+    ];
+
+    showDialog(
+      context: context,
+      builder: (_) => AlertDialog(
+        backgroundColor: const Color(0xFFE9E7E6),
+        titleTextStyle: GoogleFonts.jaldi(
+          fontSize: 25,
+          fontWeight: FontWeight.bold,
+          color: Colors.black,
+        ),
+        title: Text('Add Smart Appliance'),
+        content: StatefulBuilder(
+          builder: (BuildContext context, StateSetter setDialogState) {
+            return SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // Smart Brand Dropdown
+                  DropdownButtonFormField<String>(
+                    decoration: InputDecoration(
+                      filled: true,
+                      fillColor: Colors.white,
+                      labelText: 'Smart Brand',
+                      labelStyle: GoogleFonts.jaldi(
+                        textStyle: TextStyle(fontSize: 18),
+                        color: Colors.black,
+                      ),
+                      border: OutlineInputBorder(),
+                    ),
+                    dropdownColor: Colors.grey[200],
+                    style: GoogleFonts.jaldi(
+                      textStyle: TextStyle(fontSize: 16, color: Colors.black87),
+                    ),
+                    value: selectedBrand,
+                    items: smartBrands.map((brand) {
+                      return DropdownMenuItem(
+                        value: brand,
+                        child: Text(brand),
+                      );
+                    }).toList(),
+                    onChanged: (value) {
+                      setDialogState(() {
+                        selectedBrand = value;
+                      });
+                    },
+                  ),
+                  SizedBox(height: 15),
+                  
+                  // Model Name Input
+                  TextField(
+                    controller: modelNameInput,
+                    style: GoogleFonts.inter(
+                      textStyle: TextStyle(fontSize: 17),
+                      color: Colors.black,
+                    ),
+                    decoration: InputDecoration(
+                      filled: true,
+                      fillColor: Colors.white,
+                      border: OutlineInputBorder(),
+                      labelText: "Model Name",
+                      labelStyle: GoogleFonts.jaldi(
+                        textStyle: TextStyle(fontSize: 18),
+                        color: Colors.grey,
+                      ),
+                      hintText: "Enter model name",
+                      hintStyle: GoogleFonts.inter(
+                        color: Colors.grey,
+                        fontSize: 15,
+                      ),
+                    ),
+                  ),
+                  SizedBox(height: 15),
+                  
+                  // Appliance Type Dropdown
+                  DropdownButtonFormField<String>(
+                    decoration: InputDecoration(
+                      filled: true,
+                      fillColor: Colors.white,
+                      labelText: 'Appliance Type',
+                      labelStyle: GoogleFonts.jaldi(
+                        textStyle: TextStyle(fontSize: 18),
+                        color: Colors.black,
+                      ),
+                      border: OutlineInputBorder(),
+                    ),
+                    dropdownColor: Colors.grey[200],
+                    style: GoogleFonts.jaldi(
+                      textStyle: TextStyle(fontSize: 16, color: Colors.black87),
+                    ),
+                    value: selectedApplianceType,
+                    items: applianceTypes.map((type) {
+                      return DropdownMenuItem(
+                        value: type,
+                        child: Text(type),
+                      );
+                    }).toList(),
+                    onChanged: (value) {
+                      setDialogState(() {
+                        selectedApplianceType = value;
+                      });
+                    },
+                  ),
+                ],
+              ),
+            );
+          }
+        ),
+        actions: [
+          TextButton(
+            onPressed: () {
+              if (selectedBrand != null && 
+                  modelNameInput.text.isNotEmpty && 
+                  selectedApplianceType != null) {
+                
+                String applianceName = '$selectedApplianceType $selectedBrand - ${modelNameInput.text} ';
+               
+                setState(() {
+                  applianceNameController.text = applianceName;
+                  applianceNameError = null;
+                });
+              }
+              Navigator.pop(context);
+            },
+            style: ButtonStyle(
+              backgroundColor: WidgetStateProperty.all(Colors.black),
+              foregroundColor: WidgetStateProperty.all(Colors.white),
+            ),
+            child: Text(
+              'Add',
+              style: GoogleFonts.jaldi(
+                textStyle: TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
+                color: Colors.white,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   void _pickIcon() { // icon picker
     showModalBottomSheet(
       context: context,
@@ -786,9 +976,11 @@ class _AddDeviceScreenState extends State<AddDeviceScreen> {
       builder: (_) => GridView.count(
         crossAxisCount: 4,
         shrinkWrap: true,
-        children: [
+        children: const [
           Icons.light, Icons.tv, Icons.power, Icons.kitchen,
-          Icons.speaker, Icons.laptop, Icons.ac_unit, Icons.microwave,
+          Icons.speaker, Icons.laptop, Icons.ac_unit, Icons.microwave,Icons.coffee_maker,Icons.radio_button_checked,
+          Icons.thermostat,Icons.doorbell,Icons.camera,Icons.sensor_door,Icons.lock,Icons.door_sliding,Icons.local_laundry_service,
+          Icons.dining,Icons.rice_bowl,Icons.wind_power,Icons.router,Icons.outdoor_grill,Icons.air,Icons.alarm,
         ].map((icon) {
           return IconButton(
             icon: Icon(icon, color: Colors.black),

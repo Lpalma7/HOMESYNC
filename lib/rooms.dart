@@ -5,8 +5,8 @@ import 'package:weather/weather.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:homesync/welcome_screen.dart';
 import 'package:homesync/room_data_manager.dart';
-import 'package:cloud_firestore/cloud_firestore.dart'; // Import Firestore
-import 'package:firebase_auth/firebase_auth.dart'; // Import FirebaseAuth
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 
 // TODO: Replace 'YOUR_API_KEY' with your actual OpenWeatherMap API key
 const String _apiKey = 'YOUR_API_KEY'; // Placeholder for Weather API Key
@@ -20,9 +20,13 @@ class Rooms extends StatefulWidget {
 }
 
 class RoomsState extends State<Rooms> {
-  Weather? _currentWeather; // Updated weather state variable
+  Weather? _currentWeather;
   int _selectedIndex = 2;
-  final RoomDataManager _roomDataManager = RoomDataManager(); // Initial manager
+  final RoomDataManager _roomDataManager = RoomDataManager();
+
+  // Search functionality variables
+  final TextEditingController _searchController = TextEditingController();
+  String _searchQuery = '';
 
   // Method to get username from Firestore
   Future<String> getCurrentUsername() async {
@@ -46,7 +50,7 @@ class RoomsState extends State<Rooms> {
     }
   }
 
-  // Added weather fetching method
+  // Weather fetching method
   Future<void> _fetchWeather() async {
     if (_apiKey == 'YOUR_API_KEY') {
       print("Weather API key is a placeholder. Please replace it.");
@@ -73,10 +77,36 @@ class RoomsState extends State<Rooms> {
     }
   }
 
+  // Helper method to filter rooms based on search query
+  List<RoomItem> _filterRooms(List<RoomItem> allRooms) {
+    if (_searchQuery.isEmpty) {
+      return allRooms;
+    } else {
+      return allRooms.where((room) {
+        final String roomName = room.title.toLowerCase();
+        final String searchLower = _searchQuery.toLowerCase();
+        return roomName.contains(searchLower);
+      }).toList();
+    }
+  }
+
   @override
   void initState() {
     super.initState();
-    _fetchWeather(); // Fetch weather data
+    _fetchWeather();
+    
+    // Initialize search controller listener
+    _searchController.addListener(() {
+      setState(() {
+        _searchQuery = _searchController.text;
+      });
+    });
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
   }
 
   @override
@@ -96,7 +126,7 @@ class RoomsState extends State<Rooms> {
           padding: const EdgeInsets.all(16.0),
           child: Column(
             children: [
-              // Updated header section to match homepage design
+              // Header section
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -139,7 +169,7 @@ class RoomsState extends State<Rooms> {
                     ),
                   ),
 
-                  // Updated weather section to match homepage
+                  // Weather section
                   Transform.translate(
                     offset: Offset(0, 20),
                     child: Container(
@@ -207,14 +237,26 @@ class RoomsState extends State<Rooms> {
                 ),
               ),
 
-              const SizedBox(height: 20), // search bar
+              const SizedBox(height: 20),
+              
+              // Search bar
               SizedBox(
                 width: 355,
                 height: 47,
                 child: TextField(
+                  controller: _searchController,
                   decoration: InputDecoration(
-                    hintText: 'Search',
+                    hintText: 'Search rooms...',
+                    hintStyle: TextStyle(fontSize: 16),
                     prefixIcon: const Icon(Icons.search),
+                    suffixIcon: _searchQuery.isNotEmpty
+                        ? IconButton(
+                            icon: Icon(Icons.clear),
+                            onPressed: () {
+                              _searchController.clear();
+                            },
+                          )
+                        : null,
                     filled: true,
                     fillColor: Color(0xFFD9D9D9),
                     border: OutlineInputBorder(
@@ -224,55 +266,75 @@ class RoomsState extends State<Rooms> {
                         width: 1.5,
                       ),
                     ),
+                    contentPadding: EdgeInsets.symmetric(vertical: 12, horizontal: 20),
                   ),
+                  style: TextStyle(fontSize: 16),
                 ),
               ),
 
-              /// Room List
+              // Room List
               const SizedBox(height: 20),
               Expanded(
-                child: StreamBuilder<QuerySnapshot>(
-                  stream: FirebaseAuth.instance.currentUser != null
-                      ? FirebaseFirestore.instance
-                          .collection('users')
-                          .doc(FirebaseAuth.instance.currentUser!.uid) // Use the current user's UID
-                          .collection('Rooms') // Fetch from the user-specific Rooms subcollection
-                          .snapshots()
-                      : Stream.empty(), // Return an empty stream if user is not authenticated
-                  builder: (context, snapshot) {
-                    if (snapshot.hasError) {
-                      print("Error fetching rooms: ${snapshot.error}"); // Log the error
-                      return Center(child: Text('Error loading rooms: ${snapshot.error}'));
-                    }
-
-                    if (snapshot.connectionState == ConnectionState.waiting) {
-                      return Center(child: CircularProgressIndicator());
-                    }
-                    
-                    // Check if user is authenticated before accessing snapshot data
-                    if (FirebaseAuth.instance.currentUser == null) {
-                       return Center(child: Text('Please log in to view your rooms.'));
-                    }
-
-                    final List<RoomItem> rooms = snapshot.data!.docs.map((doc) {
-                      final data = doc.data() as Map<String, dynamic>;
-                      final roomName = data['roomName'] as String? ?? 'Unknown Room';
-                      final iconCodePoint = data['icon'] as int? ?? Icons.home.codePoint; // Default icon
-                      
-                      // We don't have appliance data here, so the appliances list will be empty
-                      return RoomItem(
-                        title: roomName,
-                        icon: IconData(iconCodePoint, fontFamily: 'MaterialIcons'),
-                        appliances: [], // Appliances list is not available from this stream
-                      );
-                    }).toList();
-
-                    if (rooms.isEmpty) {
-                      return Center(child: Text('No rooms found. Add a room to get started.'));
-                    }
-
-                    return _buildRoomsList(rooms);
+                child: GestureDetector(
+                  onTap: () {
+                   
+                    FocusScope.of(context).unfocus();
                   },
+                  child: StreamBuilder<QuerySnapshot>(
+                    stream: FirebaseAuth.instance.currentUser != null
+                        ? FirebaseFirestore.instance
+                            .collection('users')
+                            .doc(FirebaseAuth.instance.currentUser!.uid)
+                            .collection('Rooms')
+                            .snapshots()
+                        : Stream.empty(),
+                    builder: (context, snapshot) {
+                      if (snapshot.hasError) {
+                        print("Error fetching rooms: ${snapshot.error}");
+                        return Center(child: Text('Error loading rooms: ${snapshot.error}'));
+                      }
+
+                      if (snapshot.connectionState == ConnectionState.waiting) {
+                        return Center(child: CircularProgressIndicator());
+                      }
+                      
+                      if (FirebaseAuth.instance.currentUser == null) {
+                         return Center(child: Text('Please log in to view your rooms.'));
+                      }
+
+                      // Convert Firestore documents to RoomItem objects
+                      final List<RoomItem> allRooms = snapshot.data!.docs.map((doc) {
+                        final data = doc.data() as Map<String, dynamic>;
+                        final roomName = data['roomName'] as String? ?? 'Unknown Room';
+                        final iconCodePoint = data['icon'] as int? ?? Icons.home.codePoint;
+                        
+                        return RoomItem(
+                          title: roomName,
+                          icon: _getIconFromCodePoint(iconCodePoint),
+                          appliances: [],
+                        );
+                      }).toList();
+
+                      if (allRooms.isEmpty) {
+                        return Center(child: Text('No rooms found. Add a room to get started.'));
+                      }
+
+                      
+                      final List<RoomItem> filteredRooms = _filterRooms(allRooms);
+
+                      if (filteredRooms.isEmpty && _searchQuery.isNotEmpty) {
+                        return Center(
+                          child: Text(
+                            "No rooms found matching '$_searchQuery'",
+                            style: GoogleFonts.inter(),
+                            textAlign: TextAlign.center,
+                          )
+                        );
+                      }
+
+                      return _buildRoomsList(filteredRooms);
+                    },
+                  ),
                 ),
               ),
             ],
@@ -333,11 +395,9 @@ class RoomsState extends State<Rooms> {
 
     } catch (e) {
       print('Error deleting room: $e');
-      // Handle error appropriately
     }
   }
 
-  // Updated to edit room name
   void _editRoomName(String oldName, String newName) async {
     try {
       final userId = FirebaseAuth.instance.currentUser?.uid;
@@ -389,7 +449,6 @@ class RoomsState extends State<Rooms> {
 
     } catch (e) {
       print('Error editing room name: $e');
-      // Handle error appropriately
     }
   }
 
@@ -455,15 +514,13 @@ class RoomsState extends State<Rooms> {
                     child: GridView.count(
                       crossAxisCount: 4,
                       shrinkWrap: true,
-                      children: [
+                      children: const [
                         Icons.living, Icons.bed, Icons.kitchen, Icons.dining,
-                        Icons.bathroom, Icons.meeting_room, Icons.workspace_premium, Icons.chair,
-                        Icons.stairs, Icons.garage, Icons.yard, Icons.balcony,
+                        Icons.bathroom, Icons.meeting_room,Icons.garage, Icons.local_library, Icons.stairs,
                       ].map((icon) {
                         return IconButton(
                           icon: Icon(
                             icon,
-                            color: roomIconSelected == icon ? Theme.of(context).colorScheme.secondary : Colors.black,
                           ),
                           onPressed: () {
                             setDialogState(() {
@@ -510,7 +567,7 @@ class RoomsState extends State<Rooms> {
                   await FirebaseFirestore.instance
                       .collection('users')
                       .doc(userId)
-                      .collection('Rooms') // Use the user-specific Rooms subcollection
+                      .collection('Rooms')
                       .add(roomData);
 
                   print('Added room: $newRoomName to user $userId Rooms subcollection with auto-generated ID');
@@ -584,12 +641,11 @@ class RoomsState extends State<Rooms> {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            // Updated to use FutureBuilder for username
                             FutureBuilder<String>(
                               future: getCurrentUsername(),
                               builder: (context, snapshot) {
                                 return Text(
-                                  snapshot.data ?? "User", // Display username or "User" as fallback
+                                  snapshot.data ?? "User",
                                   style: TextStyle(
                                     color: Colors.white, 
                                     fontSize: 20, 
@@ -601,7 +657,7 @@ class RoomsState extends State<Rooms> {
                               },
                             ),
                             Text(
-                              FirebaseAuth.instance.currentUser?.email ?? "email@example.com", // Display actual user email
+                              FirebaseAuth.instance.currentUser?.email ?? "email@example.com",
                               style: GoogleFonts.inter(color: Colors.white70, fontSize: 14),
                               overflow: TextOverflow.ellipsis, 
                               maxLines: 1, 
@@ -643,7 +699,7 @@ class RoomsState extends State<Rooms> {
                     ),
                     title: Text('Logout', style: GoogleFonts.inter(color: Colors.white)),
                      onTap: () async {
-                      await FirebaseAuth.instance.signOut(); // Actually sign out
+                      await FirebaseAuth.instance.signOut();
                       Navigator.of(context).pushAndRemoveUntil(
                         MaterialPageRoute(builder: (context) => WelcomeScreen()),
                         (Route<dynamic> route) => false,
@@ -722,6 +778,45 @@ class RoomsState extends State<Rooms> {
       },
     );
   }
+}
+
+IconData _getIconFromCodePoint(int codePoint) {
+  final Map<int, IconData> iconMap = {
+    Icons.light.codePoint: Icons.light,
+    Icons.tv.codePoint: Icons.tv,
+    Icons.power.codePoint: Icons.power,
+    Icons.kitchen.codePoint: Icons.kitchen,
+    Icons.speaker.codePoint: Icons.speaker,
+    Icons.laptop.codePoint: Icons.laptop,
+    Icons.ac_unit.codePoint: Icons.ac_unit,
+    Icons.microwave.codePoint: Icons.microwave,
+    Icons.coffee_maker.codePoint: Icons.coffee_maker,
+    Icons.radio_button_checked.codePoint: Icons.radio_button_checked,
+    Icons.thermostat.codePoint: Icons.thermostat,
+    Icons.doorbell.codePoint: Icons.doorbell,
+    Icons.camera.codePoint: Icons.camera,
+    Icons.sensor_door.codePoint: Icons.sensor_door,
+    Icons.lock.codePoint: Icons.lock,
+    Icons.door_sliding.codePoint: Icons.door_sliding,
+    Icons.local_laundry_service.codePoint: Icons.local_laundry_service,
+    Icons.dining.codePoint: Icons.dining,
+    Icons.rice_bowl.codePoint: Icons.rice_bowl,
+    Icons.wind_power.codePoint: Icons.wind_power,
+    Icons.router.codePoint: Icons.router,
+    Icons.outdoor_grill.codePoint: Icons.outdoor_grill,
+    Icons.air.codePoint: Icons.air,
+    Icons.alarm.codePoint: Icons.alarm,
+    Icons.living.codePoint: Icons.living,
+    Icons.bed.codePoint: Icons.bed,
+    Icons.bathroom.codePoint: Icons.bathroom,
+    Icons.meeting_room.codePoint: Icons.meeting_room,
+    Icons.garage.codePoint: Icons.garage,
+    Icons.local_library.codePoint: Icons.local_library,
+    Icons.stairs.codePoint: Icons.stairs,
+    Icons.devices.codePoint: Icons.devices,
+    Icons.home.codePoint: Icons.home,
+  };
+  return iconMap[codePoint] ?? Icons.devices;
 }
 
 class RoomItem {

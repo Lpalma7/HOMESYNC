@@ -113,7 +113,7 @@ class _EditDeviceScreenState extends State<EditDeviceScreen> {
             relayController.text = selectedRelay!;
           }
           
-          selectedIcon = IconData(deviceData['icon'] as int? ?? Icons.device_hub.codePoint, fontFamily: 'MaterialIcons');
+          selectedIcon = _getIconFromCodePoint(deviceData['icon'] as int? ?? Icons.device_hub.codePoint);
 
           // Parse start and end times
           final startTimeString = deviceData['startTime'] as String?;
@@ -165,7 +165,7 @@ class _EditDeviceScreenState extends State<EditDeviceScreen> {
     }
   }
 
-  // Method to fetch room names from the database
+  // Method to fetch room names from the database - FIXED VERSION
   Future<void> _fetchRooms() async {
     print("Fetching rooms for EditDeviceScreen..."); // Debug print
     final userId = DatabaseService().getCurrentUserId(); // Use DatabaseService to get user ID
@@ -177,13 +177,34 @@ class _EditDeviceScreenState extends State<EditDeviceScreen> {
     try {
       final roomDocs = await DatabaseService().getCollection(collectionPath: 'users/$userId/Rooms');
       print("Fetched ${roomDocs.docs.length} room documents."); // Added debug print
-      final roomNames = roomDocs.docs.map((doc) => doc['roomName'] as String).toList();
+      
+      // Remove duplicates using Set and convert back to List - FIX FOR DROPDOWN ERROR
+      final roomNames = roomDocs.docs
+          .map((doc) => doc['roomName'] as String)
+          .where((name) => name.isNotEmpty) // Filter out empty names
+          .toSet() // Convert to Set to remove duplicates
+          .toList(); // Convert back to List
+
+      // Fetch room icons
+      final Map<String, IconData> fetchedIcons = {};
+      for (final doc in roomDocs.docs) {
+        final data = doc.data();
+        final roomName = data['roomName'] as String;
+        final iconCodePoint = data['icon'] as int?;
+        if (roomName.isNotEmpty) {
+          fetchedIcons[roomName] = iconCodePoint != null
+              ? _getIconFromCodePoint(iconCodePoint)
+              : Icons.home;
+        }
+      }
+          
       if (mounted) {
         setState(() {
           _roomNames = roomNames;
+          roomIcons = fetchedIcons;
         });
       }
-       print("Fetched rooms for EditDeviceScreen: $_roomNames"); // Debug print
+      print("Fetched rooms for EditDeviceScreen (duplicates removed): $_roomNames"); // Debug print
     } catch (e) {
       print("Error fetching rooms for EditDeviceScreen: $e");
       // Handle error, maybe show a message
@@ -306,13 +327,43 @@ class _EditDeviceScreenState extends State<EditDeviceScreen> {
                     ),
                   ),
                   
-                  // Required text fields
-                  _buildRequiredTextField(
-                    applianceNameController, 
-                    "Appliance Name", 
-                    Icons.device_hub,
-                    errorText: applianceNameError
+                  // Modified Appliance Name section with Add button (similar to AddDeviceScreen)
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Container(
+                          padding: const EdgeInsets.only(bottom: 5, top: 10),
+                          child: TextFormField(
+                            controller: applianceNameController,
+                            readOnly: true, // Make it read-only
+                            decoration: InputDecoration(
+                              filled: true,
+                              fillColor: Colors.white,
+                              prefixIcon: Icon(Icons.device_hub, size: 30, color: Colors.black),
+                              labelText: "Appliance Name",
+                              labelStyle: GoogleFonts.jaldi(
+                                textStyle: TextStyle(fontSize: 20),
+                                color: Colors.grey,
+                              ),
+                              border: OutlineInputBorder(),
+                              errorText: applianceNameError,
+                            ),
+                            validator: (value) {
+                              if (value == null || value.isEmpty) {
+                                return "Appliance Name is required";
+                              }
+                              return null;
+                            },
+                          ),
+                        ),
+                      ),
+                      IconButton(
+                        icon: Icon(Icons.edit, size: 30, color: Colors.black), // Changed to edit icon for edit screen
+                        onPressed: _addApplianceDialog,
+                      )
+                    ],
                   ),
+
                   _buildRequiredTextField(
                     wattageController,
                     "Wattage",
@@ -322,57 +373,8 @@ class _EditDeviceScreenState extends State<EditDeviceScreen> {
                   ),
                   SizedBox(height: 10),
                   
-                  Row(
-                    crossAxisAlignment: CrossAxisAlignment.center,
-                    children: [
-                      Expanded(
-                        child: DropdownButtonFormField<String>(
-                          decoration: InputDecoration(
-                            filled: true,
-                            fillColor: Colors.white,
-                            prefixIcon: Icon(Icons.home, size: 30, color: Colors.black),
-                            labelText: 'Room',
-                            labelStyle: GoogleFonts.jaldi(
-                              textStyle: TextStyle(fontSize: 20),
-                              color: Colors.grey, // Use grey for label like other text fields
-                            ),
-                            border: OutlineInputBorder(),
-                            errorText: roomError,
-                            contentPadding: EdgeInsets.symmetric(horizontal: 15, vertical: 17),
-                          ),
-                          dropdownColor: Colors.grey[200],
-                          style: GoogleFonts.jaldi(
-                            textStyle: TextStyle(fontSize: 18, color: Colors.black87),
-                          ),
-                          value: selectedRoom,
-                          items: _roomNames.map((roomName) {
-                            return DropdownMenuItem(
-                              value: roomName,
-                              child: Text(roomName),
-                            );
-                          }).toList(),
-                          onChanged: (value) {
-                            setState(() {
-                              selectedRoom = value;
-                              roomController.text = value ?? ''; // Update controller as well
-                              roomError = null;
-                            });
-                          },
-                          validator: (value) {
-                            if (value == null || value.isEmpty) {
-                              return "Room is required";
-                            }
-                            return null;
-                          },
-                        ),
-                      ),
-                      SizedBox(width: 8), // Add some spacing
-                      IconButton(
-                        icon: Icon(Icons.add, size: 30, color: Colors.black),
-                        onPressed: _addRoom,
-                      ),
-                    ],
-                  ),
+                  // FIXED ROOM DROPDOWN
+                  _buildRoomDropdown(),
                   
                   SizedBox(height: 15),
                   
@@ -641,6 +643,70 @@ class _EditDeviceScreenState extends State<EditDeviceScreen> {
     );
   }
 
+  // FIXED ROOM DROPDOWN METHOD
+  Widget _buildRoomDropdown() {
+    // Create a Set to ensure unique values, then convert to List
+    final uniqueRoomNames = _roomNames.where((name) => name.isNotEmpty).toSet().toList();
+    
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        Expanded(
+          child: DropdownButtonFormField<String>(
+            decoration: InputDecoration(
+              filled: true,
+              fillColor: Colors.white,
+              prefixIcon: Icon(
+                selectedRoom != null ? (roomIcons[selectedRoom] ?? Icons.home) : Icons.home,
+                size: 30,
+                color: Colors.black
+              ),
+              labelText: 'Room',
+              labelStyle: GoogleFonts.jaldi(
+                textStyle: TextStyle(fontSize: 20),
+                color: Colors.grey, // Use grey for label like other text fields
+              ),
+              border: OutlineInputBorder(),
+              errorText: roomError,
+              contentPadding: EdgeInsets.symmetric(horizontal: 15, vertical: 17),
+            ),
+            dropdownColor: Colors.grey[200],
+            style: GoogleFonts.jaldi(
+              textStyle: TextStyle(fontSize: 18, color: Colors.black87),
+            ),
+            value: (selectedRoom != null && uniqueRoomNames.contains(selectedRoom)) ? selectedRoom : null,
+            items: uniqueRoomNames.isEmpty 
+              ? [DropdownMenuItem<String>(value: null, child: Text('No rooms available'))]
+              : uniqueRoomNames.map((roomName) {
+                  return DropdownMenuItem(
+                    value: roomName,
+                    child: Text(roomName),
+                  );
+                }).toList(),
+            onChanged: uniqueRoomNames.isEmpty ? null : (value) {
+              setState(() {
+                selectedRoom = value;
+                roomController.text = value ?? '';
+                roomError = null;
+              });
+            },
+            validator: (value) {
+              if (value == null || value.isEmpty) {
+                return "Room is required";
+              }
+              return null;
+            },
+          ),
+        ),
+        SizedBox(width: 8), // Add some spacing
+        IconButton(
+          icon: Icon(Icons.add, size: 30, color: Colors.black),
+          onPressed: _addRoomDialog,
+        ),
+      ],
+    );
+  }
+
   // Required text field 
   Widget _buildRequiredTextField(
     TextEditingController controller, 
@@ -680,6 +746,300 @@ class _EditDeviceScreenState extends State<EditDeviceScreen> {
  
   static IconData roomIconSelected = Icons.home;
 
+  // Add room dialog with icon picker 
+  void _addRoomDialog() {
+    TextEditingController roomInput = TextEditingController();
+
+    showDialog(    // room content
+      context: context,
+      builder: (_) => AlertDialog(
+        backgroundColor: const Color(0xFFE9E7E6),
+        titleTextStyle: GoogleFonts.jaldi(
+          fontSize: 25,
+          fontWeight: FontWeight.bold,
+          color: Colors.black,
+        ),
+        title: Text('Add Room'),
+        content: StatefulBuilder(
+          builder: (BuildContext context, StateSetter setDialogState) {
+            return SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextField(
+                    controller: roomInput,
+                    style: GoogleFonts.inter(
+                      textStyle: TextStyle(fontSize: 17),
+                      color: Colors.black,
+                    ),
+                    decoration: InputDecoration(
+                      filled: true,
+                      fillColor: Colors.white,
+                      border: OutlineInputBorder(),
+                      hintText: "Room name",
+                      hintStyle: GoogleFonts.inter(
+                        color: Colors.grey,
+                        fontSize: 15,
+                      ),
+                      prefixIcon: Icon(
+                        roomIconSelected,
+                        color: Colors.black,
+                        size: 24,
+                      ),
+                    ),
+                  ),
+                  SizedBox(height: 15),
+                  Text(
+                    'Select Icon',
+                    style: GoogleFonts.jaldi(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.black,
+                    ),
+                  ),
+                  SizedBox(height: 5),
+                  Container(  // icon picker
+                    height: 200,
+                    width: double.maxFinite,
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                      child: GridView.count(
+                        crossAxisCount: 4,
+                        shrinkWrap: true,
+                        children: const [
+                          Icons.living, Icons.bed, Icons.kitchen, Icons.dining,
+                          Icons.bathroom, Icons.meeting_room,Icons.garage, Icons.local_library, Icons.stairs,
+                        ].map((icon) {
+                          return IconButton(
+                            icon: Icon(
+                              icon,
+                            ),
+                            onPressed: () {
+                              setDialogState(() {
+                                roomIconSelected = icon;
+                              });
+                            },
+                          );
+                        }).toList(),
+                      ),
+                  ),
+                ],
+              ),
+            );
+          }
+        ),
+
+        actions: [
+          TextButton(  // room add btn
+            onPressed: () {
+              if (roomInput.text.isNotEmpty) {
+                // Add room to Firestore
+                _addRoomToFirestore(roomInput.text, roomIconSelected);
+
+                setState(() {
+                  _roomNames.add(roomInput.text);
+                  selectedRoom = roomInput.text;
+                  roomIcons[roomInput.text] = roomIconSelected;
+                  roomController.text = roomInput.text;
+                  roomError = null;
+                });
+              }
+              Navigator.pop(context);
+            },
+            style: ButtonStyle(
+              backgroundColor: WidgetStateProperty.all(Colors.black),
+              foregroundColor: WidgetStateProperty.all(Colors.white),
+            ),
+            child: Text(
+              'Add',
+              style: GoogleFonts.jaldi(
+                textStyle: TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
+                color: Colors.white,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // New appliance dialog 
+  void _addApplianceDialog() {
+    TextEditingController modelNameInput = TextEditingController();
+    String? selectedBrand;
+    String? selectedApplianceType;
+
+   
+    final currentName = applianceNameController.text;
+    if (currentName.isNotEmpty) {
+      
+      final parts = currentName.split(' - ');
+      if (parts.length == 2) {
+        selectedBrand = parts[1];
+        final typeAndModel = parts[0].split(' ');
+        if (typeAndModel.length >= 2) {
+          selectedApplianceType = typeAndModel[0];
+          modelNameInput.text = typeAndModel.sublist(1).join(' ');
+        }
+      }
+    }
+
+    // Smart brands list 
+    final List<String> smartBrands = [
+      'Samsung', 'LG', 'Xiaomi', 'Philips', 'Sony', 'Panasonic', 
+      'TCL', 'Haier', 'Whirlpool', 'Electrolux', 'Bosch', 'GE',
+      'KitchenAid', 'Frigidaire', 'Maytag', 'Fisher & Paykel'
+    ];
+
+    // Appliance types list 
+    final List<String> applianceTypes = [
+      'TV', 'Air Conditioner', 'Refrigerator', 'Washing Machine',
+      'Microwave', 'Dishwasher', 'Coffee Maker', 'Rice Cooker',
+      'Electric Fan', 'Heater', 'Speaker', 'Plugs', 'Air Fryer',
+      'Light', 'Router', 'Home Hub', 'Air Purifier', 'Alarm Clock',
+      'Doorbell', 'CCTV', 'Smoke Alarm', 'Garage Door', 'Lock', 'Vacuum', 'Lamp',
+    ];
+
+    showDialog(
+      context: context,
+      builder: (_) => AlertDialog(
+        backgroundColor: const Color(0xFFE9E7E6),
+        titleTextStyle: GoogleFonts.jaldi(
+          fontSize: 25,
+          fontWeight: FontWeight.bold,
+          color: Colors.black,
+        ),
+        title: Text('Edit Smart Appliance'),
+        content: StatefulBuilder(
+          builder: (BuildContext context, StateSetter setDialogState) {
+            return SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // Smart Brand Dropdown
+                  DropdownButtonFormField<String>(
+                    decoration: InputDecoration(
+                      filled: true,
+                      fillColor: Colors.white,
+                      labelText: 'Smart Brand',
+                      labelStyle: GoogleFonts.jaldi(
+                        textStyle: TextStyle(fontSize: 18),
+                        color: Colors.black,
+                      ),
+                      border: OutlineInputBorder(),
+                    ),
+                    dropdownColor: Colors.grey[200],
+                    style: GoogleFonts.jaldi(
+                      textStyle: TextStyle(fontSize: 16, color: Colors.black87),
+                    ),
+                    value: selectedBrand,
+                    items: smartBrands.map((brand) {
+                      return DropdownMenuItem(
+                        value: brand,
+                        child: Text(brand),
+                      );
+                    }).toList(),
+                    onChanged: (value) {
+                      setDialogState(() {
+                        selectedBrand = value;
+                      });
+                    },
+                  ),
+                  SizedBox(height: 15),
+                  
+                  // Model Name Input
+                  TextField(
+                    controller: modelNameInput,
+                    style: GoogleFonts.inter(
+                      textStyle: TextStyle(fontSize: 17),
+                      color: Colors.black,
+                    ),
+                    decoration: InputDecoration(
+                      filled: true,
+                      fillColor: Colors.white,
+                      border: OutlineInputBorder(),
+                      labelText: "Model Name",
+                      labelStyle: GoogleFonts.jaldi(
+                        textStyle: TextStyle(fontSize: 18),
+                        color: Colors.grey,
+                      ),
+                      hintText: "Enter model name",
+                      hintStyle: GoogleFonts.inter(
+                        color: Colors.grey,
+                        fontSize: 15,
+                      ),
+                    ),
+                  ),
+                  SizedBox(height: 15),
+                  
+                  // Appliance Type Dropdown
+                  DropdownButtonFormField<String>(
+                    decoration: InputDecoration(
+                      filled: true,
+                      fillColor: Colors.white,
+                      labelText: 'Appliance Type',
+                      labelStyle: GoogleFonts.jaldi(
+                        textStyle: TextStyle(fontSize: 18),
+                        color: Colors.black,
+                      ),
+                      border: OutlineInputBorder(),
+                    ),
+                    dropdownColor: Colors.grey[200],
+                    style: GoogleFonts.jaldi(
+                      textStyle: TextStyle(fontSize: 16, color: Colors.black87),
+                    ),
+                    value: selectedApplianceType,
+                    items: applianceTypes.map((type) {
+                      return DropdownMenuItem(
+                        value: type,
+                        child: Text(type),
+                      );
+                    }).toList(),
+                    onChanged: (value) {
+                      setDialogState(() {
+                        selectedApplianceType = value;
+                      });
+                    },
+                  ),
+                ],
+              ),
+            );
+          }
+        ),
+        actions: [
+          TextButton(
+            onPressed: () {
+              if (selectedBrand != null && 
+                  modelNameInput.text.isNotEmpty && 
+                  selectedApplianceType != null) {
+                
+                String applianceName = '$selectedApplianceType ${modelNameInput.text} - $selectedBrand';
+                setState(() {
+                  applianceNameController.text = applianceName;
+                  applianceNameError = null;
+                });
+              }
+              Navigator.pop(context);
+            },
+            style: ButtonStyle(
+              backgroundColor: WidgetStateProperty.all(Colors.black),
+              foregroundColor: WidgetStateProperty.all(Colors.white),
+            ),
+            child: Text(
+              'Update',
+              style: GoogleFonts.jaldi(
+                textStyle: TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
+                color: Colors.white,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   void _pickIcon() { // icon picker
     showModalBottomSheet(
       context: context,
@@ -687,9 +1047,11 @@ class _EditDeviceScreenState extends State<EditDeviceScreen> {
       builder: (_) => GridView.count(
         crossAxisCount: 4,
         shrinkWrap: true,
-        children: [
+        children: const [
           Icons.light, Icons.tv, Icons.power, Icons.kitchen,
-          Icons.speaker, Icons.laptop, Icons.ac_unit, Icons.microwave,
+          Icons.speaker, Icons.laptop, Icons.ac_unit, Icons.microwave,Icons.coffee_maker,Icons.radio_button_checked,
+          Icons.thermostat,Icons.doorbell,Icons.camera,Icons.sensor_door,Icons.lock,Icons.door_sliding,Icons.local_laundry_service,
+          Icons.dining,Icons.rice_bowl,Icons.wind_power,Icons.router,Icons.outdoor_grill,Icons.air,Icons.alarm,
         ].map((icon) {
           return IconButton(
             icon: Icon(icon, color: Colors.black),
@@ -737,64 +1099,36 @@ class _EditDeviceScreenState extends State<EditDeviceScreen> {
       });
     }
   }
-  
-  void _addRoom() async {
-    String? newRoomName = await showDialog<String>(
-      context: context,
-      builder: (BuildContext context) {
-        TextEditingController newRoomController = TextEditingController();
-        return AlertDialog(
-          title: Text('Add New Room'),
-          content: TextField(
-            controller: newRoomController,
-            decoration: InputDecoration(hintText: "Enter Room Name"),
-          ),
-          actions: <Widget>[
-            TextButton(
-              child: Text('Cancel'),
-              onPressed: () {
-                Navigator.of(context).pop();
-              },
-            ),
-            TextButton(
-              child: Text('Add'),
-              onPressed: () {
-                Navigator.of(context).pop(newRoomController.text.trim());
-              },
-            ),
-          ],
-        );
-      },
-    );
 
-    if (newRoomName != null && newRoomName.isNotEmpty) {
+  // Add room to Firestore
+  void _addRoomToFirestore(String roomName, IconData icon) async {
+    try {
       final userId = DatabaseService().getCurrentUserId();
-      if (userId != null) {
-        try {
-          // Add the new room to the database
-          await DatabaseService().addDocumentToCollection(
-            collectionPath: 'users/$userId/Rooms',
-            data: {'roomName': newRoomName},
-          );
-          // Refresh the room list
-          await _fetchRooms();
-          // Optionally select the newly added room
-          if (_roomNames.contains(newRoomName)) {
-            setState(() {
-              selectedRoom = newRoomName;
-              roomController.text = newRoomName;
-            });
-          }
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text("Room '$newRoomName' added successfully!"))
-          );
-        } catch (e) {
-          print("Error adding room: $e");
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text("Error adding room: ${e.toString()}"))
-          );
-        }
+      if (userId == null) {
+        print("User not authenticated. Cannot add room.");
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text("User not authenticated. Cannot add room."))
+        );
+        return;
       }
+
+      final roomData = {
+        'roomName': roomName,
+        'icon': icon.codePoint,
+        'createdAt': FieldValue.serverTimestamp(),
+      };
+
+      await FirebaseFirestore.instance
+          .collection('users')
+          .doc(userId)
+          .collection('Rooms') // Add to the user-specific Rooms subcollection
+          .add(roomData);
+      print("Added room '$roomName' to user's Rooms subcollection");
+    } catch (e) {
+      print("Error adding room to user's subcollection: $e");
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text("Room added locally but failed to save to database: ${e.toString()}"))
+      );
     }
   }
 
@@ -996,4 +1330,43 @@ class _EditDeviceScreenState extends State<EditDeviceScreen> {
       }
     }
   }
+}
+
+IconData _getIconFromCodePoint(int codePoint) {
+  final Map<int, IconData> iconMap = {
+    Icons.light.codePoint: Icons.light,
+    Icons.tv.codePoint: Icons.tv,
+    Icons.power.codePoint: Icons.power,
+    Icons.kitchen.codePoint: Icons.kitchen,
+    Icons.speaker.codePoint: Icons.speaker,
+    Icons.laptop.codePoint: Icons.laptop,
+    Icons.ac_unit.codePoint: Icons.ac_unit,
+    Icons.microwave.codePoint: Icons.microwave,
+    Icons.coffee_maker.codePoint: Icons.coffee_maker,
+    Icons.radio_button_checked.codePoint: Icons.radio_button_checked,
+    Icons.thermostat.codePoint: Icons.thermostat,
+    Icons.doorbell.codePoint: Icons.doorbell,
+    Icons.camera.codePoint: Icons.camera,
+    Icons.sensor_door.codePoint: Icons.sensor_door,
+    Icons.lock.codePoint: Icons.lock,
+    Icons.door_sliding.codePoint: Icons.door_sliding,
+    Icons.local_laundry_service.codePoint: Icons.local_laundry_service,
+    Icons.dining.codePoint: Icons.dining,
+    Icons.rice_bowl.codePoint: Icons.rice_bowl,
+    Icons.wind_power.codePoint: Icons.wind_power,
+    Icons.router.codePoint: Icons.router,
+    Icons.outdoor_grill.codePoint: Icons.outdoor_grill,
+    Icons.air.codePoint: Icons.air,
+    Icons.alarm.codePoint: Icons.alarm,
+    Icons.living.codePoint: Icons.living,
+    Icons.bed.codePoint: Icons.bed,
+    Icons.bathroom.codePoint: Icons.bathroom,
+    Icons.meeting_room.codePoint: Icons.meeting_room,
+    Icons.garage.codePoint: Icons.garage,
+    Icons.local_library.codePoint: Icons.local_library,
+    Icons.stairs.codePoint: Icons.stairs,
+    Icons.devices.codePoint: Icons.devices,
+    Icons.home.codePoint: Icons.home,
+  };
+  return iconMap[codePoint] ?? Icons.devices;
 }
