@@ -11,31 +11,39 @@ import 'dart:async';
 import 'dart:math'; // For min function
 import 'package:firebase_auth/firebase_auth.dart'; // Added import for FirebaseAuth
 import 'package:cloud_firestore/cloud_firestore.dart'; // For QueryDocumentSnapshot
+import 'package:homesync/scheduling_service.dart'; // Import scheduling service
+import 'package:intl/intl.dart'; // For date formatting
 
 // TODO: Replace 'YOUR_API_KEY' with your actual OpenWeatherMap API key
 const String _apiKey = 'YOUR_API_KEY'; // Placeholder for Weather API Key
 const String _cityName = 'Manila'; // Default city for weather
 
 class DevicesScreen extends StatefulWidget {
-  const DevicesScreen({super.key});
+  final ApplianceSchedulingService schedulingService;
+
+  const DevicesScreen({super.key, required this.schedulingService});
 
   @override
   State<DevicesScreen> createState() => DevicesScreenState();
 }
 
 class DevicesScreenState extends State<DevicesScreen> {
+  final FirebaseAuth _auth = FirebaseAuth.instance; // Moved here
   Weather? _currentWeather; // Added weather state variable
   int _selectedIndex = 1;
   final DatabaseService _dbService = DatabaseService();
+  late ApplianceSchedulingService _schedulingService; // Instance from widget
   StreamSubscription? _appliancesSubscription;
+  final List<StreamSubscription> _relaySubscriptions = []; // For managing relay state listeners
 
-  List<QueryDocumentSnapshot<Map<String, dynamic>>> _devices = []; // To store appliance documents
+  List<Map<String, dynamic>> _devices = []; // Changed to List<Map<String, dynamic>>
 
   // Local state for master power button visual, true if it's in "ON" commanding mode
   bool _masterPowerButtonState = false;
 
   // UsageService instance
   UsageService? _usageService;
+  double _kwhrRate = DEFAULT_KWHR_RATE; // Cache for user's kWh rate
 
   // Method to get username from Firestore
   Future<String> getCurrentUsername() async {
@@ -89,7 +97,9 @@ class DevicesScreenState extends State<DevicesScreen> {
   @override
   void initState() {
     super.initState();
+    _schedulingService = widget.schedulingService; // Initialize from widget
     _usageService = UsageService(); // Initialize UsageService
+    _fetchUserKwhrRate(); // Fetch kwhrRate
     _fetchWeather(); // Fetch weather data
     _listenToAppliances();
     _listenForRelayStateChanges();
@@ -98,95 +108,180 @@ class DevicesScreenState extends State<DevicesScreen> {
     // User authentication check is handled within methods that need userId.
   }
 
-  void _listenForRelayStateChanges() {
-    final user = FirebaseAuth.instance.currentUser;
+  Future<void> _fetchUserKwhrRate() async {
+    final user = _auth.currentUser;
     if (user == null) {
-      print("User not authenticated. Cannot listen to relay state changes.");
+      print("DevicesScreen: User not authenticated. Using default kWh rate.");
+      _kwhrRate = DEFAULT_KWHR_RATE; // Fallback to default
       return;
     }
-
-    // Listen for individual relay state changes (relay1-relay9) in the subcollection
-    for (int i = 1; i <= 9; i++) {
-      String relay = 'relay$i';
-      FirebaseFirestore.instance
+    try {
+      DocumentSnapshot userDoc = await FirebaseFirestore.instance
           .collection('users')
           .doc(user.uid)
+          .get();
+      if (userDoc.exists && userDoc.data() != null) {
+        final data = userDoc.data() as Map<String, dynamic>;
+        if (mounted) {
+          setState(() {
+            _kwhrRate = (data['kwhr'] as num?)?.toDouble() ?? DEFAULT_KWHR_RATE;
+          });
+        }
+      } else {
+         if (mounted) setState(() => _kwhrRate = DEFAULT_KWHR_RATE);
+      }
+    } catch (e) {
+      print("DevicesScreen: Error fetching user kWh rate: $e. Using default.");
+      if (mounted) setState(() => _kwhrRate = DEFAULT_KWHR_RATE);
+    }
+  }
+
+  void _listenForRelayStateChanges() {
+    // Clear existing subscriptions before starting new ones
+    for (var sub in _relaySubscriptions) {
+      sub.cancel();
+    }
+    _relaySubscriptions.clear();
+
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) {
+      print("DevicesScreen: User not authenticated. Cannot listen to relay state changes.");
+      return;
+    }
+    final userId = user.uid;
+
+    // Listener for master relay (relay10) directly on the user document
+    var masterRelaySub = FirebaseFirestore.instance
+        .collection('users')
+        .doc(userId)
+        .snapshots()
+        .listen((userDocSnapshot) {
+      if (mounted) {
+        if (userDocSnapshot.exists && userDocSnapshot.data() != null) {
+          final userData = userDocSnapshot.data()!;
+          final String? relay10StatusString = userData['relay10'] as String?;
+          int newMasterState = 0; // Default to OFF
+          if (relay10StatusString == 'ON') {
+            newMasterState = 1;
+          }
+          if (RelayState.relayStates['relay10'] != newMasterState) {
+            setState(() {
+              RelayState.relayStates['relay10'] = newMasterState;
+              _masterPowerButtonState = newMasterState == 1; // Update visual state for master button
+              print("DevicesScreen: Updated master relay (relay10) state from Firestore: $newMasterState (${relay10StatusString ?? 'N/A'})");
+            });
+          }
+        } else {
+          print("DevicesScreen: User document for $userId does not exist. Assuming master relay (relay10) OFF.");
+          if (RelayState.relayStates['relay10'] != 0) {
+            setState(() {
+              RelayState.relayStates['relay10'] = 0;
+              _masterPowerButtonState = false;
+            });
+          }
+        }
+      }
+    }, onError: (error) {
+      print("DevicesScreen: Error listening to user document for relay10 state for user $userId: $error");
+    });
+    _relaySubscriptions.add(masterRelaySub);
+
+    // Listeners for individual device relays (relay1 through relay9)
+    for (int i = 1; i <= 9; i++) {
+      String relayKey = "relay$i";
+      var deviceRelaySub = FirebaseFirestore.instance
+          .collection('users')
+          .doc(userId)
           .collection('relay_states')
-          .doc(relay)
+          .doc(relayKey)
           .snapshots()
           .listen((snapshot) {
-            if (snapshot.exists && snapshot.data() != null) {
-              final data = snapshot.data()!;
-              if (data['state'] != null) {
-                setState(() {
-                  RelayState.relayStates[relay] = data['state'] as int;
-                  // Also read the irControlled flag
-                  RelayState.irControlledStates[relay] = data['irControlled'] as bool? ?? false;
-                });
-              }
-            }
-          });
-    }
-
-    // Listen for master relay state change (relay10) directly under the user document
-    FirebaseFirestore.instance
-        .collection('users')
-        .doc(user.uid)
-        .snapshots()
-        .listen((snapshot) {
+        if (mounted) {
           if (snapshot.exists && snapshot.data() != null) {
             final data = snapshot.data()!;
-            if (data['relay10'] != null) {
+            final newState = data['state'] as int?;
+            final bool newIrControlledState = data['irControlled'] as bool? ?? false;
+
+            bool changed = false;
+            if (newState != null && RelayState.relayStates[relayKey] != newState) {
+              RelayState.relayStates[relayKey] = newState;
+              changed = true;
+            }
+            if (RelayState.irControlledStates[relayKey] != newIrControlledState) {
+              RelayState.irControlledStates[relayKey] = newIrControlledState;
+              changed = true;
+            }
+
+            if (changed) {
               setState(() {
-                // Convert string state ('ON'/'OFF') to integer (1/0)
-                RelayState.relayStates['relay10'] = data['relay10'] == 'ON' ? 1 : 0;
-                _masterPowerButtonState = RelayState.relayStates['relay10'] == 1;
+                print("DevicesScreen: Updated device relay data from Firestore: $relayKey = State: ${RelayState.relayStates[relayKey]}, IR: ${RelayState.irControlledStates[relayKey]}");
               });
             }
+          } else {
+            print("DevicesScreen: Device relay document for $relayKey does not exist for user $userId. Assuming OFF and not IR controlled.");
+            bool changed = false;
+            if (RelayState.relayStates[relayKey] != 0) {
+               RelayState.relayStates[relayKey] = 0;
+               changed = true;
+            }
+            if (RelayState.irControlledStates[relayKey] != false) {
+               RelayState.irControlledStates[relayKey] = false;
+               changed = true;
+            }
+            if (changed && mounted) {
+              setState(() {});
+            }
           }
-        });
+        }
+      }, onError: (error) {
+        print("DevicesScreen: Error listening to device relay state for $relayKey under user $userId: $error");
+      });
+      _relaySubscriptions.add(deviceRelaySub);
+    }
   }
 
   void _listenToAppliances() {
-    _appliancesSubscription?.cancel(); // Cancel any existing subscription
+    _appliancesSubscription?.cancel(); 
 
-    // First check if the user is authenticated
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) {
       print("User not authenticated. Cannot fetch appliances.");
-      setState(() {
-        _devices = [];
-      });
+      if (mounted) {
+        setState(() {
+          _devices = [];
+        });
+      }
       return;
     }
 
     print("Authenticated user: ${user.email}");
 
-    // Access the user-specific 'appliances' subcollection
     _appliancesSubscription = FirebaseFirestore.instance
         .collection('users')
-        .doc(user.uid) // Use the current user's UID
+        .doc(user.uid)
         .collection('appliances')
         .snapshots()
         .listen((snapshot) {
       if (mounted) {
         setState(() {
-          // Get all devices from Firestore
-          _devices = snapshot.docs;
+          _devices = snapshot.docs.map((doc) {
+            return {
+              'id': doc.id, // Store document ID
+              ...doc.data(),
+            };
+          }).toList();
 
           print("Found ${_devices.length} devices from Firestore");
-          print("Device fields: applianceName, applianceStatus, deviceType, icon, roomName");
-
           // Log the first few devices for debugging
           for (int i = 0; i < min(_devices.length, 3); i++) {
-            final data = _devices[i].data();
-            print("Device ${i+1}: ${data['applianceName']} (${data['roomName']}) - ${data['applianceStatus']}");
+            final data = _devices[i];
+            print("Device ${i+1}: ${data['applianceName']} (${data['roomName']}) - Status: ${data['applianceStatus']}");
           }
         });
         _updateMasterPowerButtonVisualState();
       }
     }, onError: (error) {
-      print("Error listening to appliances: $error");
+      print("Error listening to appliances: $e");
       if (mounted) {
         setState(() {
           _devices = [];
@@ -213,11 +308,26 @@ class DevicesScreenState extends State<DevicesScreen> {
   @override
   void dispose() {
     _appliancesSubscription?.cancel();
+    for (var sub in _relaySubscriptions) {
+      sub.cancel();
+    }
+    _relaySubscriptions.clear();
     super.dispose();
   }
 
   void _toggleMasterPower() async {
-    // Toggle the master relay (relay10)
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) {
+      print("Error: User not authenticated for master power toggle.");
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text("User not authenticated.")),
+        );
+      }
+      return;
+    }
+    final userUid = user.uid;
+
     int currentMasterState = RelayState.relayStates['relay10'] ?? 0;
     int newMasterState = 1 - currentMasterState; // Toggle between 0 and 1
 
@@ -227,63 +337,104 @@ class DevicesScreenState extends State<DevicesScreen> {
       _masterPowerButtonState = newMasterState == 1;
     });
 
-    // Update Firebase RTDB for relay10
     try {
-      // Update relay10 field directly under user document with string state
-      final userUid = FirebaseAuth.instance.currentUser!.uid;
+      WriteBatch batch = FirebaseFirestore.instance.batch();
+      final userDocRef = FirebaseFirestore.instance.collection('users').doc(userUid);
       final newMasterStateString = newMasterState == 1 ? 'ON' : 'OFF';
-      await FirebaseFirestore.instance
-          .collection('users')
-          .doc(userUid)
-          .update({'relay10': newMasterStateString});
+
+      batch.update(userDocRef, {'relay10': newMasterStateString});
 
       // If turning OFF master switch, turn off all devices
-      if (newMasterState == 0) {
-        List<Future<void>> updateFutures = [];
-
-        // Update all relays in RTDB (assuming still in subcollection for now)
+      if (newMasterState == 0) { // Master is turning OFF
+        // Update all individual relays (1-9)
         for (int i = 1; i <= 9; i++) {
           String relayKey = 'relay$i';
-          RelayState.relayStates[relayKey] = 0;
-          updateFutures.add(
-            FirebaseFirestore.instance
-                .collection('users')
-                .doc(userUid)
-                .collection('relay_states')
-                .doc(relayKey)
-                .update({'state': 0}) // Use update instead of set
-          );
+          RelayState.relayStates[relayKey] = 0; // Update local state
+          final relayDocRef = userDocRef.collection('relay_states').doc(relayKey);
+          // Check if document exists before trying to update, or use set with merge if appropriate
+          // For simplicity, assuming update is fine, but robust code might check existence or use set with merge.
+          batch.update(relayDocRef, {'state': 0});
         }
 
-        // Update all appliances in Firestore in the user's subcollection
-        for (var deviceDoc in _devices) {
-          updateFutures.add(
-            FirebaseFirestore.instance
-                .collection('users')
-                .doc(userUid)
-                .collection('appliances')
-                .doc(deviceDoc.id)
-                .update({'applianceStatus': 'OFF'})
-          );
+        // Update all appliance documents' status to 'OFF'
+        for (var deviceData in _devices) {
+          final applianceId = deviceData['id'] as String?;
+          if (applianceId != null) {
+            final applianceDocRef = userDocRef.collection('appliances').doc(applianceId);
+            batch.update(applianceDocRef, {'applianceStatus': 'OFF'});
+          }
         }
-
-        await Future.wait(updateFutures);
       }
+      // If turning ON master switch (newMasterState == 1), no individual devices are turned on automatically by this action.
+      // They retain their previous states or are controlled individually.
 
-      print("Master power toggled to ${newMasterState == 1 ? 'ON' : 'OFF'}");
+      await batch.commit(); // Commit all batched writes
+      print("Master power toggled to ${newMasterState == 1 ? 'ON' : 'OFF'} successfully using WriteBatch.");
+
     } catch (e) {
-      print("Error during master power toggle: $e");
+      print("Error during master power toggle with WriteBatch: $e");
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text("Error toggling master power: ${e.toString()}")),
         );
-        // Revert visual state if error
-        _listenToAppliances(); // Refresh states from DB
+        // Revert visual state if error by re-fetching current states
+        // This might involve re-calling parts of _listenForRelayStateChanges or _listenToAppliances
+        // For simplicity, we'll rely on the listeners to eventually correct the state.
+        // A more robust solution might force a refresh of the specific states involved.
+         _listenForRelayStateChanges(); // Re-attach listeners to get latest state
+         _listenToAppliances();
       }
     }
   }
 
-  Future<void> _toggleIndividualDevice(String applianceName, String currentStatus) async {
+  // Helper methods for schedule logic (similar to DeviceInfoScreen)
+  TimeOfDay? _parseTime(String? timeStr, {bool isStartTime = false}) {
+    if (timeStr == null || timeStr.isEmpty) return null;
+    if (isStartTime && timeStr == "0") { 
+        return null; 
+    }
+    try {
+      final parts = timeStr.split(':');
+      if (parts.length == 2) {
+        return TimeOfDay(hour: int.parse(parts[0]), minute: int.parse(parts[1]));
+      }
+    } catch (e) {
+      print("DevicesScreen: Error parsing time string '$timeStr': $e");
+    }
+    return null;
+  }
+
+  String _getCurrentDayName(DateTime now) {
+    return DateFormat('E').format(now); // E.g., "Mon", "Tue"
+  }
+
+  Future<bool> _showScheduleConfirmationDialog({required String title, required String content}) async {
+    if (!mounted) return false;
+    return await showDialog<bool>(
+          context: context,
+          builder: (BuildContext context) {
+            return AlertDialog(
+              title: Text(title),
+              content: Text(content),
+              actions: <Widget>[
+                TextButton(
+                  child: const Text('No'),
+                  onPressed: () => Navigator.of(context).pop(false),
+                ),
+                TextButton(
+                  child: const Text('Yes'),
+                  onPressed: () => Navigator.of(context).pop(true),
+                ),
+              ],
+            );
+          },
+        ) ?? false;
+  }
+
+  Future<void> _toggleIndividualDevice(Map<String, dynamic> deviceDataWithId, String currentStatus) async {
+    final String applianceName = deviceDataWithId['applianceName'] as String? ?? 'Unknown Device';
+    final String applianceId = deviceDataWithId['id'] as String;
+
     // Check if master switch is OFF
     if (RelayState.relayStates['relay10'] == 0) {
       // If master switch is OFF, do nothing
@@ -293,108 +444,141 @@ class DevicesScreenState extends State<DevicesScreen> {
       return;
     }
 
-    // Get the relay associated with this appliance using applianceName
-    final deviceDoc = _devices.firstWhere((doc) => doc.data()['applianceName'] == applianceName);
-    final deviceData = deviceDoc.data();
-    final String relayKey = deviceData['relay'] as String? ?? '';
+    // deviceData is now deviceDataWithId
+    final String relayKey = deviceDataWithId['relay'] as String? ?? '';
+    final double wattage = (deviceDataWithId['wattage'] as num?)?.toDouble() ?? 0.0;
+    final String? startTimeStr = deviceDataWithId['startTime'] as String?;
+    final String? endTimeStr = deviceDataWithId['endTime'] as String?;
+    final List<String> scheduledDays = List<String>.from(deviceDataWithId['days'] as List<dynamic>? ?? []);
 
-    // Check if the relay is currently IR controlled AND the user is trying to turn it OFF
+    // IR Control Check (existing logic)
     if (RelayState.irControlledStates[relayKey] == true && currentStatus == 'ON') {
-       // Show confirmation dialog
-       bool confirmTurnOff = await showDialog(
-         context: context,
-         builder: (BuildContext context) {
-           return AlertDialog(
-             title: Text("Confirm Turn Off"),
-             content: Text("This device is currently controlled by IR. Do you want to force it OFF?"),
-             actions: <Widget>[
-               TextButton(
-                 child: Text("Cancel"),
-                 onPressed: () {
-                   Navigator.of(context).pop(false); // Return false on cancel
-                 },
-               ),
-               TextButton(
-                 child: Text("Turn Off"),
-                 onPressed: () {
-                   Navigator.of(context).pop(true); // Return true on confirm
-                 },
-               ),
-             ],
-           );
-         },
-       ) ?? false; // Default to false if dialog is dismissed
-
-       if (!confirmTurnOff) {
-         return; // If user cancels, do not proceed
-       }
-       // If user confirms, proceed to turn off
-    } else if (RelayState.irControlledStates[relayKey] == true && currentStatus == 'OFF') {
-        // If IR is controlling and the device is already OFF, allow toggling ON
-        // No confirmation needed in this case based on the prompt
+       bool confirmTurnOff = await _showScheduleConfirmationDialog( // Using renamed dialog
+         title: "Confirm Turn Off",
+         content: "This device is currently controlled by IR. Do you want to force it OFF?",
+       );
+       if (!confirmTurnOff) return;
     }
 
+    final bool intendedNewStatusFlag = currentStatus == 'OFF'; // If current is OFF, user wants to turn ON
+    bool proceedWithToggle = true;
 
-    final newStatus = currentStatus == 'ON' ? 'OFF' : 'ON';
+    DateTime now = DateTime.now();
+    TimeOfDay currentTime = TimeOfDay.fromDateTime(now);
+    String currentDayName = _getCurrentDayName(now);
+
+    TimeOfDay? scheduledStartTime = _parseTime(startTimeStr, isStartTime: true);
+    TimeOfDay? scheduledEndTime = _parseTime(endTimeStr);
+    bool isScheduledToday = scheduledDays.contains(currentDayName);
+
+    if (intendedNewStatusFlag == true) { // User wants to turn ON
+      if (isScheduledToday && scheduledEndTime != null && scheduledStartTime != null) {
+        double currentMinutes = currentTime.hour * 60.0 + currentTime.minute;
+        double endMinutes = scheduledEndTime.hour * 60.0 + scheduledEndTime.minute;
+        double startMinutes = scheduledStartTime.hour * 60.0 + scheduledStartTime.minute;
+        bool isAfterScheduledEnd = (startMinutes <= endMinutes) ? (currentMinutes > endMinutes) : (currentMinutes > endMinutes && currentMinutes < startMinutes);
+        if (isAfterScheduledEnd) {
+             proceedWithToggle = await _showScheduleConfirmationDialog(
+                title: 'Confirm Action',
+                content: 'The scheduled ON time for $applianceName has ended for today. Are you sure you want to turn it ON?',
+             );
+        }
+      }
+    } else { // User wants to turn OFF
+      if (isScheduledToday && scheduledStartTime != null && scheduledEndTime != null) {
+        double currentMinutes = currentTime.hour * 60.0 + currentTime.minute;
+        double startMinutes = scheduledStartTime.hour * 60.0 + scheduledStartTime.minute;
+        double endMinutes = scheduledEndTime.hour * 60.0 + scheduledEndTime.minute;
+        bool withinScheduledOnPeriod = (startMinutes <= endMinutes) ? (currentMinutes >= startMinutes && currentMinutes < endMinutes) : (currentMinutes >= startMinutes || currentMinutes < endMinutes);
+        if (withinScheduledOnPeriod) {
+          proceedWithToggle = await _showScheduleConfirmationDialog(
+            title: 'Confirm Action',
+            content: '$applianceName is currently within its scheduled ON time. Are you sure you want to turn it OFF?',
+          );
+          if (proceedWithToggle && mounted) {
+            _schedulingService.recordManualOffOverride(applianceId, scheduledEndTime);
+          }
+        }
+      }
+    }
+
+    if (!proceedWithToggle) {
+      print("Toggle for $applianceName cancelled by user or schedule conflict.");
+      // To revert visual state of switch in DeviceCard, we'd need to call setState here.
+      if(mounted) {
+        setState(() {}); // Force rebuild to ensure DeviceCard reflects the original _devices state.
+      }
+      return;
+    }
+    
+    // Optimistic UI Update
+    final int deviceIndex = _devices.indexWhere((d) => d['id'] == applianceId);
+    if (deviceIndex == -1) {
+      print("Error: Device not found in local list for optimistic update.");
+      return;
+    }
+    final String previousStatus = _devices[deviceIndex]['applianceStatus'];
+    _devices[deviceIndex]['applianceStatus'] = intendedNewStatusFlag ? 'ON' : 'OFF';
+    if (mounted) {
+      setState(() {}); // Update UI immediately
+    }
+
     try {
-      print("Toggling device $applianceName from $currentStatus to $newStatus");
+      final user = FirebaseAuth.instance.currentUser;
+      if (user == null) {
+        // Revert optimistic update if user is somehow null
+        if (mounted && deviceIndex != -1) {
+          _devices[deviceIndex]['applianceStatus'] = previousStatus;
+          setState(() {});
+        }
+        return;
+      }
 
-      // Get the relay associated with this appliance using applianceName
-      final deviceDoc = _devices.firstWhere((doc) => doc.data()['applianceName'] == applianceName);
-      final deviceData = deviceDoc.data();
-      print("Device data: $deviceData");
-
-      final String relayKey = deviceData['relay'] as String? ?? '';
-
+      // === Prioritized Relay State Update ===
       if (relayKey.isNotEmpty) {
-        // Update relay state in Firestore (assuming still in subcollection for now)
-        int newRelayState = newStatus == 'ON' ? 1 : 0;
-        RelayState.relayStates[relayKey] = newRelayState;
-
-        print("Updating relay state: $relayKey to $newRelayState");
-        final userUid = FirebaseAuth.instance.currentUser!.uid;
-        await FirebaseFirestore.instance
-            .collection('users')
-            .doc(userUid)
-            .collection('relay_states')
-            .doc(relayKey)
-            .update({'state': newRelayState});
+        final int newRelayState = intendedNewStatusFlag ? 1 : 0;
+        print("DevicesScreen: PRIORITY: Attempting to update relay state for $relayKey to $newRelayState for user ${user.uid}.");
+        try {
+          await FirebaseFirestore.instance
+              .collection('users')
+              .doc(user.uid)
+              .collection('relay_states')
+              .doc(relayKey)
+              .set({'state': newRelayState}, SetOptions(merge: true));
+          print("DevicesScreen: PRIORITY: Relay state update for $relayKey to $newRelayState successful.");
+        } catch (relayError) {
+          print("DevicesScreen: PRIORITY: ERROR updating relay state for $relayKey: $relayError");
+          // If relay update fails, we might revert optimistic UI and not proceed.
+          // For now, logging the error. Consider if _usageService.handleApplianceToggle should still be called.
+        }
+      } else {
+        print("DevicesScreen: PRIORITY: No relayKey found for appliance $applianceId. Skipping relay state update.");
       }
+      // ====================================
 
-      // Update appliance status in Firestore directly using the document ID
-      print("Updating appliance status in Firestore");
-      await FirebaseFirestore.instance
-          .collection('users')
-          .doc(FirebaseAuth.instance.currentUser!.uid) // Use the current user's UID
-          .collection('appliances')
-          .doc(deviceDoc.id) // Use the document ID
-          .update({'applianceStatus': newStatus});
+      // Fetch user's kWh rate (needed for UsageService) - NOW USING CACHED _kwhrRate
+      // DocumentSnapshot userSnap = await FirebaseFirestore.instance.collection('users').doc(user.uid).get();
+      // double kwhrRate = DEFAULT_KWHR_RATE;
+      // if (userSnap.exists && userSnap.data() != null) {
+      //     kwhrRate = ((userSnap.data() as Map<String,dynamic>)['kwhr'] as num?)?.toDouble() ?? DEFAULT_KWHR_RATE;
+      // }
 
-      print("Device $applianceName toggled successfully");
-
-      // Record usage time after successful toggle
-      final userUid = FirebaseAuth.instance.currentUser!.uid;
-      final applianceId = deviceDoc.id;
-      final double wattage = (deviceData['wattage'] is num) ? (deviceData['wattage'] as num).toDouble() : 0.0; // Fetch wattage
-
-      // Fetch user's kWh rate
-      DocumentSnapshot userSnap = await FirebaseFirestore.instance.collection('users').doc(userUid).get();
-      double kwhrRate = DEFAULT_KWHR_RATE; // Use default from usage.dart
-      if (userSnap.exists && userSnap.data() != null) {
-          kwhrRate = ((userSnap.data() as Map<String,dynamic>)['kwhr'] as num?)?.toDouble() ?? DEFAULT_KWHR_RATE;
-      }
-
-      // Call UsageService to handle the toggle
       await _usageService?.handleApplianceToggle(
-        userId: userUid,
+        userId: user.uid,
         applianceId: applianceId,
-        isOn: newStatus == 'ON',
+        isOn: intendedNewStatusFlag,
         wattage: wattage,
-        kwhrRate: kwhrRate,
+        kwhrRate: _kwhrRate, // Use cached kwhrRate
       );
+      print("DevicesScreen: applianceStatus update via UsageService for $applianceId initiated after relay update attempt.");
 
     } catch (e) {
-      print("Error toggling device $applianceName: $e");
+      print("Error during toggle operations (relay or UsageService) for $applianceName: $e");
+      // Revert optimistic update on error
+      if (mounted && deviceIndex != -1) {
+        _devices[deviceIndex]['applianceStatus'] = previousStatus;
+        setState(() {});
+      }
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text("Failed to update $applianceName: ${e.toString()}")),
@@ -591,7 +775,7 @@ class DevicesScreenState extends State<DevicesScreen> {
                       
                       // UPDATED: Device grid now uses shrinkWrap and physics: NeverScrollableScrollPhysics
                       _devices.isEmpty
-                          ? Container(
+                          ? SizedBox(
                               height: 200, // Give it some height when empty
                               child: Center(child: Text("No devices found.", style: GoogleFonts.inter())),
                             )
@@ -606,24 +790,31 @@ class DevicesScreenState extends State<DevicesScreen> {
                                 mainAxisSpacing: 10,
                               ),
                               itemBuilder: (context, index) {
-                                final deviceDoc = _devices[index];
-                                final deviceData = deviceDoc.data();
-                                // Extract all required fields from Firestore
-                                final String applianceName = deviceData['applianceName'] as String? ?? 'Unknown Device';
-                                final String roomName = deviceData['roomName'] as String? ?? 'Unknown Room';
-                                final String deviceType = deviceData['deviceType'] as String? ?? 'Unknown Type';
-                                final String applianceStatus = deviceData['applianceStatus'] as String? ?? 'OFF';
-                                final bool isOn = applianceStatus == 'ON';
-                                final int iconCodePoint = (deviceData['icon'] is int) ? deviceData['icon'] as int : Icons.devices.codePoint;
+                                final deviceDataWithId = _devices[index]; 
+                                final String applianceId = deviceDataWithId['id'] as String;
+                                final String applianceName = deviceDataWithId['applianceName'] as String? ?? 'Unknown Device';
+                                final String roomName = deviceDataWithId['roomName'] as String? ?? 'Unknown Room';
+                                final String deviceType = deviceDataWithId['deviceType'] as String? ?? 'Unknown Type';
+                                final int iconCodePoint = (deviceDataWithId['icon'] is int) ? deviceDataWithId['icon'] as int : Icons.devices.codePoint;
+                                final String relayKey = deviceDataWithId['relay'] as String? ?? '';
+
+                                // Determine current state FROM RELAY_STATE
+                                final bool currentRelayIsOn = (RelayState.relayStates[relayKey] == 1);
+                                final String currentRelayStatusString = currentRelayIsOn ? 'ON' : 'OFF';
+                                
+                                // For DeviceCard display, it might still use applianceStatus from deviceDataWithId if needed for other logic,
+                                // but the primary visual ON/OFF should be currentRelayIsOn.
+                                // Let's ensure DeviceCard's `isOn` prop reflects the relay state.
+                                final bool displayIsOn = RelayState.relayStates['relay10'] == 1 && currentRelayIsOn;
 
                                 return GestureDetector(
                                   onTap: () {
-                                    // Only allow toggling if master switch is ON
                                     if (RelayState.relayStates['relay10'] == 1) {
-                                      _toggleIndividualDevice(applianceName, applianceStatus); // Use applianceName as identifier
+                                      // Pass the status derived from the relay state
+                                      _toggleIndividualDevice(deviceDataWithId, currentRelayStatusString);
                                     } else {
                                        ScaffoldMessenger.of(context).showSnackBar(
-                                        SnackBar(content: Text("Turn on master power first")),
+                                        const SnackBar(content: Text("Turn on master power first")),
                                       );
                                     }
                                   },
@@ -632,14 +823,14 @@ class DevicesScreenState extends State<DevicesScreen> {
                                     context,
                                     '/editdevice',
                                     arguments: {
-                                      'applianceId': deviceDoc.id,
+                                      'applianceId': applianceId,
                                     },
                                   );
                                   },
                                   child: Container(
                                     decoration: BoxDecoration(
                                       // Change color based on individual state AND master switch state
-                                      color: RelayState.relayStates['relay10'] == 1 && isOn ? Colors.black : Colors.white,
+                                      color: displayIsOn ? Colors.black : Colors.white, // Use displayIsOn
                                       borderRadius: BorderRadius.circular(10),
                                       boxShadow: [
                                         BoxShadow(
@@ -654,12 +845,12 @@ class DevicesScreenState extends State<DevicesScreen> {
                                       applianceName: applianceName,
                                       roomName: roomName,
                                       deviceType: deviceType,
-                                      // Pass individual state, but consider master switch for visual
-                                      isOn: RelayState.relayStates['relay10'] == 1 && isOn,
+                                      // Pass individual state, now derived from relay state
+                                      isOn: currentRelayIsOn, // This is the raw device state from relay
                                       icon: IconData(iconCodePoint, fontFamily: 'MaterialIcons'),
-                                      applianceStatus: applianceStatus, // Pass applianceStatus
-                                      masterSwitchIsOn: RelayState.relayStates['relay10'] == 1, // Pass master switch state
-                                      applianceId: deviceDoc.id, // Pass applianceId
+                                      applianceStatus: currentRelayStatusString, // Status string from relay
+                                      masterSwitchIsOn: RelayState.relayStates['relay10'] == 1, 
+                                      applianceId: applianceId,
                                     ),
                                   ),
                                 );
@@ -967,5 +1158,4 @@ class DeviceCard extends StatelessWidget {
   }
 }
 
-// Helper for FirebaseAuth instance, if not already available via _dbService
-final FirebaseAuth _auth = FirebaseAuth.instance;
+// Helper for FirebaseAuth instance is now a member of DevicesScreenState

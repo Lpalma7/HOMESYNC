@@ -10,6 +10,7 @@ import 'package:homesync/profile_screen.dart';
 import 'package:cloud_firestore/cloud_firestore.dart'; // Import Firestore
 import 'package:firebase_auth/firebase_auth.dart'; // Import FirebaseAuth
 import 'dart:async'; // Import for StreamSubscription
+import 'package:homesync/scheduling_service.dart'; // Import the new scheduling service
 // Import for date formatting
 // Import OverallDetailedUsageScreen
 
@@ -32,12 +33,43 @@ class _HomeScreenState extends State<HomepageScreen> {
 
   double _totalUsageKwh = 0.0; // State variable for total usage
   double _totalElectricityCost = 0.0; // State variable for total cost
+  double _kwhrRate = DEFAULT_KWHR_RATE; // Cached user's kWh rate
 
   final FirebaseAuth _auth = FirebaseAuth.instance; // FirebaseAuth instance
   StreamSubscription? _appliancesSubscription; // StreamSubscription for appliances
   StreamSubscription? _summarySubscription; // StreamSubscription for summary usage
   List<QueryDocumentSnapshot<Map<String, dynamic>>> _appliances = []; // List to hold appliance data
   final UsageService _usageService = UsageService(); // Instantiate UsageService
+  // late ApplianceSchedulingService _schedulingService; // Removed local instance variable
+
+  // Helper method to fetch and cache the user's kWh rate
+  Future<void> _fetchUserKwhrRate() async {
+    final user = _auth.currentUser;
+    if (user == null) {
+      print("Homepage: User not authenticated. Using default kWh rate.");
+      if (mounted) setState(() => _kwhrRate = DEFAULT_KWHR_RATE);
+      return;
+    }
+    try {
+      DocumentSnapshot userDoc = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(user.uid)
+          .get();
+      if (userDoc.exists && userDoc.data() != null) {
+        final data = userDoc.data() as Map<String, dynamic>;
+        if (mounted) {
+          setState(() {
+            _kwhrRate = (data['kwhr'] as num?)?.toDouble() ?? DEFAULT_KWHR_RATE;
+          });
+        }
+      } else {
+         if (mounted) setState(() => _kwhrRate = DEFAULT_KWHR_RATE);
+      }
+    } catch (e) {
+      print("Homepage: Error fetching user kWh rate: $e. Using default.");
+      if (mounted) setState(() => _kwhrRate = DEFAULT_KWHR_RATE);
+    }
+  }
 
   // Method to get username from Firestore
   Future<String> getCurrentUsername() async {
@@ -73,6 +105,13 @@ class _HomeScreenState extends State<HomepageScreen> {
   @override
   void initState() {
     super.initState();
+    // Initialize the singleton ApplianceSchedulingService
+    ApplianceSchedulingService.initService(
+      auth: _auth,
+      firestore: FirebaseFirestore.instance,
+      usageService: _usageService,
+    );
+    // _schedulingService.initialize(); // Initialization is now handled within initService
     _initializeHomepageData();
   }
 
@@ -108,6 +147,7 @@ class _HomeScreenState extends State<HomepageScreen> {
   }
 
   Future<void> _initializeHomepageData() async {
+    await _fetchUserKwhrRate(); // Fetch and cache kwhrRate first
     _fetchWeather(); // Fetch weather data
     try {
       final user = _auth.currentUser;
@@ -131,12 +171,13 @@ class _HomeScreenState extends State<HomepageScreen> {
       
       // Proactively update/create all summary documents for the current reference date
       // This will ensure documents like 'week_total_summary' exist before _listenToSummaryUsage tries to read them.
-      // DEFAULT_KWHR_RATE is a top-level const in usage.dart, accessible due to the import.
       print("Homepage: Proactively updating all summary totals for user ${user.uid}.");
+      // Use the cached _kwhrRate
+      print("Homepage: Using cached kWh rate: $_kwhrRate for initial data refresh.");
       // Using refreshAllUsageDataForDate to ensure per-appliance data is also up-to-date before overall totals.
       await _usageService.refreshAllUsageDataForDate(
           userId: user.uid,
-          kwhrRate: DEFAULT_KWHR_RATE, // Assuming DEFAULT_KWHR_RATE is accessible
+          kwhrRate: _kwhrRate, // Use cached rate
           referenceDate: DateTime.now()
       );
 
@@ -163,6 +204,7 @@ class _HomeScreenState extends State<HomepageScreen> {
 
   @override
   void dispose() {
+    ApplianceSchedulingService.instance.dispose(); // Dispose the singleton instance
     _appliancesSubscription?.cancel(); // Cancel the appliances subscription
     _summarySubscription?.cancel(); // Cancel the summary usage subscription
     // _selectedApplianceUsageSubscription?.cancel(); // REMOVED
@@ -293,13 +335,15 @@ class _HomeScreenState extends State<HomepageScreen> {
         double newTotalKwh = 0.0;
         double newTotalCost = 0.0;
 
+        print("Homepage: _listenToSummaryUsage received snapshot for $targetDocPath. Exists: ${snapshot.exists}");
+
         if (snapshot.exists && snapshot.data() != null) {
           final Map<String, dynamic> summaryDocumentData = snapshot.data()!;
-          // Data is directly in this document
+          print("Homepage: Data from snapshot for $targetDocPath: $summaryDocumentData");
           newTotalKwh = (summaryDocumentData['totalKwh'] as num?)?.toDouble() ?? 0.0;
           newTotalCost = (summaryDocumentData['totalKwhrCost'] as num?)?.toDouble() ?? 0.0;
         } else {
-          print("Summary document not found at path: $targetDocPath for period $_selectedPeriod. Attempting to create with defaults.");
+          print("Homepage: Summary document not found at path: $targetDocPath for period $_selectedPeriod. Attempting to create with defaults.");
           // If document not found, create it with defaults.
           // This is an async call, but we won't await it here to avoid holding up the stream listener.
           // The next snapshot from the stream should then pick up the newly created document.
@@ -307,13 +351,14 @@ class _HomeScreenState extends State<HomepageScreen> {
           // Values will remain 0.0 for this snapshot, will update on next snapshot if creation is successful.
         }
         
+        print("Homepage: Setting state: _totalUsageKwh = $newTotalKwh, _totalElectricityCost = $newTotalCost for period $_selectedPeriod");
         setState(() {
           _totalUsageKwh = newTotalKwh;
           _totalElectricityCost = newTotalCost;
         });
       }
     }, onError: (error) {
-      print("Error listening to summary usage document $targetDocPath for period $_selectedPeriod: $error");
+      print("Homepage: Error listening to summary usage document $targetDocPath for period $_selectedPeriod: $error");
       if (mounted) {
         setState(() {
           _totalUsageKwh = 0.0;
@@ -794,6 +839,7 @@ Widget _buildDeviceItem(String id, String name, String usage, IconData icon) { /
         MaterialPageRoute(builder: (context) => DeviceInfoScreen( 
           applianceId: id, 
           initialDeviceName: name,
+          schedulingService: ApplianceSchedulingService.instance, // Pass the singleton instance
           // initialDeviceUsage: usage, // Usage will be fetched from Firestore by DeviceInfoScreen
         )),
       );
@@ -908,14 +954,37 @@ Widget _buildDeviceItem(String id, String name, String usage, IconData icon) { /
 
     try {
       print("Homepage: Manual refresh initiated by user ${user.uid}.");
-      // Use refreshAllUsageDataForDate to ensure all underlying data is recalculated
-      await _usageService.refreshAllUsageDataForDate(
-        userId: user.uid,
-        kwhrRate: DEFAULT_KWHR_RATE,
-        referenceDate: DateTime.now(), // Refresh for the current day context
-      );
-      // The listeners should pick up the changes.
-      // If not, explicitly call _listenToSummaryUsage() and _listenToAppliances()
+      DateTime refreshTimestamp = DateTime.now();
+      print("Homepage: Using cached kWh rate: $_kwhrRate for manual refresh for all appliances.");
+
+      if (_appliances.isEmpty) {
+        print("Homepage: No appliances to refresh individually. Triggering general aggregation.");
+        // If no appliances, still good to ensure overall totals are processed for the current time.
+        // This might call updateAllAppliancesTotalUsage which is also called by handleManualRefreshForAppliance.
+        // Consider if a lighter aggregation is needed or if this is fine.
+        // For now, let's use refreshAllUsageDataForDate which focuses on aggregations.
+        await _usageService.refreshAllUsageDataForDate(
+          userId: user.uid,
+          kwhrRate: _kwhrRate,
+          referenceDate: refreshTimestamp
+        );
+      } else {
+        for (var applianceDoc in _appliances) {
+          final String applianceId = applianceDoc.id;
+          print("Homepage: Refreshing appliance $applianceId using handleManualRefreshForAppliance.");
+          // Note: handleManualRefreshForAppliance itself calls aggregation functions.
+          // This means aggregations will run for each appliance.
+          await _usageService.handleManualRefreshForAppliance(
+            userId: user.uid,
+            applianceId: applianceId,
+            kwhrRate: _kwhrRate,
+            refreshTime: refreshTimestamp,
+          );
+        }
+      }
+
+      // After all individual refreshes (which include their own aggregations),
+      // ensure listeners are updated.
       _listenToSummaryUsage(); // Re-listen to ensure UI updates with latest overall totals
       _listenToAppliances();   // Re-listen to ensure appliance list is fresh (if it could change)
       _fetchWeather(); // Fetch the latest weather data

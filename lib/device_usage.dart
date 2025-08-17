@@ -138,6 +138,15 @@ class DeviceUsageState extends State<DeviceUsage> with SingleTickerProviderState
     );
   }
 
+  // Helper for month name (consistent with UsageService and DeviceInfoScreen)
+  String _getMonthNameHelper(int month) {
+    const monthNames = [
+      '', 'january', 'february', 'march', 'april', 'may', 'jun', // Corrected "june" to "jun"
+      'july', 'august', 'september', 'october', 'november', 'december'
+    ];
+    return monthNames[month].toLowerCase();
+  }
+
   // Helper to get week of month (1-5) for a given date
   // Week 1: days 1-7, Week 2: days 8-14, ..., Week 5: days 29-31
   int getWeekOfMonth(DateTime date) {
@@ -162,8 +171,22 @@ class DeviceUsageState extends State<DeviceUsage> with SingleTickerProviderState
         }
 
         final data = snapshot.data!.data() as Map<String, dynamic>;
-        final kwh = data['kwh']?.toString() ?? 'N/A';
-        final kwhrcost = data['kwhrcost']?.toString() ?? 'N/A';
+        final kwhRaw = data['kwh'];
+        final kwhrcostRaw = data['kwhrcost'];
+
+        String kwhDisplay;
+        if (kwhRaw is num) {
+          kwhDisplay = (kwhRaw).toDouble().toStringAsFixed(2);
+        } else {
+          kwhDisplay = 'N/A';
+        }
+
+        String kwhrcostDisplay;
+        if (kwhrcostRaw is num) {
+          kwhrcostDisplay = '₱${(kwhrcostRaw).toDouble().toStringAsFixed(2)}';
+        } else {
+          kwhrcostDisplay = 'N/A';
+        }
 
         // Yearly display: "{year}" '{kwh specific value in that year}' '{kwhrcost specific value in that year}'
         return ListView(
@@ -171,8 +194,8 @@ class DeviceUsageState extends State<DeviceUsage> with SingleTickerProviderState
             usageTile(
               '', // leading is not used for yearly as showCircle is false
               currentYear, // title: {year}
-              kwh, // usage (removed ' kWh' suffix)
-              '₱$kwhrcost', // cost
+              kwhDisplay, // usage
+              kwhrcostDisplay, // cost
               showCircle: false,
             ),
           ],
@@ -183,18 +206,19 @@ class DeviceUsageState extends State<DeviceUsage> with SingleTickerProviderState
 
   Widget buildMonthlyUsage() {
     final String currentYear = DateTime.now().year.toString();
-    // Using DateFormat.MMMM().dateSymbols.MONTHS to get localized month names
-    final List<String> monthNames = DateFormat.MMMM().dateSymbols.MONTHS; // Still Jan to Dec
+    // Use numbers 1-12 for months and format with _getMonthNameHelper
+    final List<int> monthNumbers = List.generate(12, (index) => index + 1);
 
     return ListView.builder(
-      itemCount: monthNames.length, // Iterate 12 times
+      itemCount: monthNumbers.length, // Iterate 12 times
       itemBuilder: (context, i) { // Use 'i' for the direct loop index 0..11
         // To get reverse chronological order (Dec, Nov, ... Jan)
-        final int reversedIndex = monthNames.length - 1 - i; // 11, 10, ..., 0
-        final String monthName = monthNames[reversedIndex]; // December, November, ...
-        final int monthNumber = reversedIndex + 1; // 12, 11, ...
+        final int reversedMonthIndex = monthNumbers.length - 1 - i; // 11, 10, ..., 0
+        final int monthNumber = monthNumbers[reversedMonthIndex]; // 12, 11, ...
+        final String monthNameForDisplay = DateFormat.MMMM().format(DateTime(DateTime.now().year, monthNumber)); // For display "December"
+        final String monthNameForPath = _getMonthNameHelper(monthNumber); // For path "dec" or "jun"
         
-        final String monthDocId = "${monthName}_usage"; // e.g., "December_usage"
+        final String monthDocId = "${monthNameForPath}_usage"; // e.g., "dec_usage", "jun_usage"
         final String path = '/users/${widget.userId}/appliances/${widget.applianceId}/yearly_usage/$currentYear/monthly_usage/$monthDocId';
 
         return FutureBuilder<DocumentSnapshot>(
@@ -209,14 +233,26 @@ class DeviceUsageState extends State<DeviceUsage> with SingleTickerProviderState
                 displayCost = 'N/A';
               } else {
                 final data = snapshot.data!.data() as Map<String, dynamic>;
-                displayKwh = data['kwh']?.toString() ?? 'N/A'; // Removed ' kWh' suffix
-                displayCost = '₱${data['kwhrcost']?.toString() ?? 'N/A'}';
+                final kwhRaw = data['kwh'];
+                final kwhrcostRaw = data['kwhrcost'];
+
+                if (kwhRaw is num) {
+                  displayKwh = (kwhRaw).toDouble().toStringAsFixed(2);
+                } else {
+                  displayKwh = 'N/A';
+                }
+
+                if (kwhrcostRaw is num) {
+                  displayCost = '₱${(kwhrcostRaw).toDouble().toStringAsFixed(2)}';
+                } else {
+                  displayCost = 'N/A';
+                }
               }
             }
             
             return usageTile(
               monthNumber.toString(), 
-              monthName, 
+              monthNameForDisplay, // Display full month name
               displayKwh,
               displayCost,
             );
@@ -234,14 +270,15 @@ class DeviceUsageState extends State<DeviceUsage> with SingleTickerProviderState
     // Display weeks for the current month and the previous month
     for (int monthOffset = 0; monthOffset < 2; monthOffset++) { 
       DateTime monthToDisplay = DateTime(now.year, now.month - monthOffset, 1);
-      String monthName = DateFormat.MMMM().format(monthToDisplay);
-      String monthDocId = "${monthName}_usage";
+      String monthNameForDisplay = DateFormat.MMMM().format(monthToDisplay); // For display "June"
+      String monthNameForPath = _getMonthNameHelper(monthToDisplay.month); // For path "jun"
+      String monthDocId = "${monthNameForPath}_usage";
 
       weeklyWidgets.add(
         Padding(
           padding: EdgeInsets.symmetric(horizontal: 20, vertical: 10),
           child: Text(
-            monthName, // Month Name Header (e.g., "June")
+            monthNameForDisplay, // Month Name Header (e.g., "June")
             style: GoogleFonts.jaldi(
               fontSize: 25,
               fontWeight: FontWeight.w600,
@@ -271,8 +308,20 @@ class DeviceUsageState extends State<DeviceUsage> with SingleTickerProviderState
                   displayCost = 'N/A';
                 } else {
                   final data = snapshot.data!.data() as Map<String, dynamic>;
-                  displayKwh = data['kwh']?.toString() ?? 'N/A'; // Removed ' kWh' suffix
-                  displayCost = '₱${data['kwhrcost']?.toString() ?? 'N/A'}';
+                  final kwhRaw = data['kwh'];
+                  final kwhrcostRaw = data['kwhrcost'];
+
+                  if (kwhRaw is num) {
+                    displayKwh = (kwhRaw).toDouble().toStringAsFixed(2);
+                  } else {
+                    displayKwh = 'N/A';
+                  }
+
+                  if (kwhrcostRaw is num) {
+                    displayCost = '₱${(kwhrcostRaw).toDouble().toStringAsFixed(2)}';
+                  } else {
+                    displayCost = 'N/A';
+                  }
                 }
               }
               return usageTile(
@@ -302,8 +351,8 @@ class DeviceUsageState extends State<DeviceUsage> with SingleTickerProviderState
       DateTime dateToDisplay = today.subtract(Duration(days: i));
       
       String year = dateToDisplay.year.toString();
-      String monthName = DateFormat.MMMM().format(dateToDisplay);
-      String monthDocId = "${monthName}_usage";
+      String monthNameForPath = _getMonthNameHelper(dateToDisplay.month); // For path "jun"
+      String monthDocId = "${monthNameForPath}_usage";
       
       int weekOfMonthNumber = getWeekOfMonth(dateToDisplay); // Helper method
       String weekDocId = "week${weekOfMonthNumber}_usage";
@@ -348,8 +397,20 @@ class DeviceUsageState extends State<DeviceUsage> with SingleTickerProviderState
                 displayCost = 'N/A';
               } else {
                 final data = snapshot.data!.data() as Map<String, dynamic>;
-                displayKwh = data['kwh']?.toString() ?? 'N/A'; // Removed ' kWh' suffix
-                displayCost = '₱${data['kwhrcost']?.toString() ?? 'N/A'}';
+                final kwhRaw = data['kwh'];
+                final kwhrcostRaw = data['kwhrcost'];
+
+                if (kwhRaw is num) {
+                  displayKwh = (kwhRaw).toDouble().toStringAsFixed(2);
+                } else {
+                  displayKwh = 'N/A';
+                }
+
+                if (kwhrcostRaw is num) {
+                  displayCost = '₱${(kwhrcostRaw).toDouble().toStringAsFixed(2)}';
+                } else {
+                  displayCost = 'N/A';
+                }
               }
             }
             return usageTile(

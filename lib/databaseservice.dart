@@ -58,6 +58,8 @@ class DatabaseService {
   }
 
   // Get all documents in a collection
+  // WARNING: Fetches ALL documents. Use with caution on large collections.
+  // Consider pagination or specific queries if performance is a concern.
   Future<QuerySnapshot<Map<String, dynamic>>> getCollection({
     required String collectionPath,
   }) async {
@@ -112,6 +114,8 @@ class DatabaseService {
   }
 
   // Stream a collection
+  // WARNING: Streams ALL documents. Use with caution on large collections.
+  // Consider filtered or paginated streams if performance is a concern.
   Stream<QuerySnapshot<Map<String, dynamic>>> streamCollection({
     required String collectionPath,
   }) {
@@ -171,6 +175,9 @@ class DatabaseService {
 
     // 1. Uniqueness Check:
     // Check if an appliance with the same name, relay, AND deviceType already exists for this user.
+    // IMPORTANT: This query requires a composite index in Firestore on
+    // ('applianceName', 'relay', 'deviceType') for the 'appliances' subcollection
+    // to be performant.
     final uniquenessQuery = await appliancesCollectionRef
         .where('applianceName', isEqualTo: applianceName)
         .where('relay', isEqualTo: relay)
