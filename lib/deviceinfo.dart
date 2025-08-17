@@ -1,12 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:homesync/device_usage.dart';
 import 'package:homesync/usage.dart'; // Now imports UsageService
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'dart:async';
 import 'package:homesync/databaseservice.dart'; // Import DatabaseService
-import 'package:homesync/electricity_usage_chart.dart'; // Import ElectricityUsageChart
+// Import ElectricityUsageChart
 import 'package:firebase_auth/firebase_auth.dart'; // Import FirebaseAuth
-import 'package:homesync/detailed_usage.dart'; // Import DetailedUsageScreen
+// Import DetailedUsageScreen
 import 'package:intl/intl.dart'; // Import for date formatting
 
 // Adding a comment to trigger re-analysis
@@ -49,8 +50,7 @@ class DeviceInfoScreenState extends State<DeviceInfoScreen> {
   final String _selectedUsagePeriod = 'daily'; // Default to daily
   bool _isRefreshing = false; // State for refresh indicator
 
-  // Editable fields
-  late TextEditingController _nameController;
+  // Editable fields - removed _nameController since name is no longer editable
   late TextEditingController _roomController;
   late TextEditingController _typeController;
   final TextEditingController _kWhRateController = TextEditingController(text: "0.0"); // Initialize immediately
@@ -73,7 +73,7 @@ class DeviceInfoScreenState extends State<DeviceInfoScreen> {
   @override
   void initState() {
     super.initState();
-    _nameController = TextEditingController(text: widget.initialDeviceName);
+    // Removed _nameController initialization since name is no longer editable
     _roomController = TextEditingController(); // Will be populated from fetched data
     _typeController = TextEditingController(); // Will be populated from fetched data
     _usageService = UsageService(); // Initialize UsageService
@@ -94,7 +94,7 @@ class DeviceInfoScreenState extends State<DeviceInfoScreen> {
   void dispose() {
     _applianceSubscription?.cancel();
     _periodicUsageSubscription?.cancel(); // Cancel the new subscription
-    _nameController.dispose();
+    // Removed _nameController.dispose() since it's no longer used
     _roomController.dispose();
     _typeController.dispose();
     _kWhRateController.dispose(); // Dispose the new controller
@@ -135,8 +135,7 @@ class DeviceInfoScreenState extends State<DeviceInfoScreen> {
               _isDeviceOn = (data['applianceStatus'] == 'ON');
               _currentDeviceName = data['applianceName'] ?? widget.initialDeviceName;
 
-              // Populate editing fields
-              _nameController.text = _currentDeviceName;
+              // Populate editing fields - removed _nameController.text line
               _roomController.text = data['roomName'] ?? "";
               print("RoomController text set to: ${_roomController.text}"); // Add print statement
               _deviceType = data['deviceType'] ?? "Light"; // Set the device type for dropdown
@@ -212,28 +211,119 @@ class DeviceInfoScreenState extends State<DeviceInfoScreen> {
   }
 
   void _addRoom() async {
+    TextEditingController newRoomController = TextEditingController();
+    IconData roomIconSelected = Icons.home;
+
     String? newRoomName = await showDialog<String>(
       context: context,
       builder: (BuildContext context) {
-        TextEditingController newRoomController = TextEditingController();
         return AlertDialog(
+          backgroundColor: const Color(0xFFE9E7E6),
+          titleTextStyle: GoogleFonts.jaldi(
+            fontSize: 25,
+            fontWeight: FontWeight.bold,
+            color: Colors.black,
+          ),
           title: Text('Add New Room'),
-          content: TextField(
-            controller: newRoomController,
-            decoration: InputDecoration(hintText: "Enter Room Name"),
+          content: StatefulBuilder(
+            builder: (BuildContext context, StateSetter setDialogState) {
+              return SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    TextField(
+                      controller: newRoomController,
+                      style: GoogleFonts.inter(
+                        textStyle: TextStyle(fontSize: 17),
+                        color: Colors.black,
+                      ),
+                      decoration: InputDecoration(
+                        filled: true,
+                        fillColor: Colors.white,
+                        border: OutlineInputBorder(),
+                        hintText: "Enter Room Name",
+                        hintStyle: GoogleFonts.inter(
+                          color: Colors.grey,
+                          fontSize: 15,
+                        ),
+                        prefixIcon: Icon(
+                          roomIconSelected,
+                          color: Colors.black,
+                          size: 24,
+                        ),
+                      ),
+                    ),
+                    SizedBox(height: 15),
+                    Text(
+                      'Select Icon',
+                      style: GoogleFonts.jaldi(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.black,
+                      ),
+                    ),
+                    SizedBox(height: 5),
+                    Container(
+                      height: 200,
+                      width: double.maxFinite,
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: GridView.count(
+                        crossAxisCount: 4,
+                        shrinkWrap: true,
+                        children: const [
+                        Icons.living, Icons.bed, Icons.kitchen, Icons.dining,
+                        Icons.bathroom, Icons.meeting_room,Icons.garage, Icons.local_library, Icons.stairs,
+                        ].map((icon) {
+                          return IconButton(
+                            icon: Icon(
+                              icon,
+                            ),
+                            onPressed: () {
+                              setDialogState(() {
+                                roomIconSelected = icon;
+                              });
+                            },
+                          );
+                        }).toList(),
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            }
           ),
           actions: <Widget>[
             TextButton(
-              child: Text('Cancel'),
+              child: Text(
+                'Cancel',
+                style: GoogleFonts.jaldi(
+                  textStyle: TextStyle(fontSize: 18, color: Colors.black87),
+                ),
+              ),
               onPressed: () {
                 Navigator.of(context).pop();
               },
             ),
             TextButton(
-              child: Text('Add'),
-              onPressed: () {
-                Navigator.of(context).pop(newRoomController.text.trim());
+              onPressed: () async {
+                if (newRoomController.text.trim().isNotEmpty) {
+                  Navigator.of(context).pop(newRoomController.text.trim());
+                }
               },
+              style: ButtonStyle(
+                backgroundColor: WidgetStateProperty.all(Colors.black),
+                foregroundColor: WidgetStateProperty.all(Colors.white),
+              ),
+              child: Text(
+                'Add',
+                style: GoogleFonts.jaldi(
+                  textStyle: TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
+                  color: Colors.white,
+                ),
+              ),
             ),
           ],
         );
@@ -244,10 +334,14 @@ class DeviceInfoScreenState extends State<DeviceInfoScreen> {
       final userId = _auth.currentUser?.uid; // Use _auth instance
       if (userId != null) {
         try {
-          // Add the new room to the database
+          // Add the new room to the database with both name and icon
           await _dbService.addDocumentToCollection( // Use _dbService instance
             collectionPath: 'users/$userId/Rooms', // Corrected path
-            data: {'roomName': newRoomName},
+            data: {
+              'roomName': newRoomName,
+              'icon': roomIconSelected.codePoint,
+              'createdAt': FieldValue.serverTimestamp(),
+            },
           );
           // Refresh the room list
           await _fetchRooms();
@@ -561,9 +655,8 @@ class DeviceInfoScreenState extends State<DeviceInfoScreen> {
    
     double kWhRate = double.tryParse(_kWhRateController.text) ?? 0.0;
 
-    // Data to update on the appliance document
+    // Data to update on the appliance document - removed 'applianceName' since it's no longer editable
     final applianceUpdateData = {
-      'applianceName': _nameController.text,
       'roomName': _roomController.text,
       'deviceType': _deviceType,
       'icon': _selectedIcon.codePoint,
@@ -675,26 +768,12 @@ class DeviceInfoScreenState extends State<DeviceInfoScreen> {
 
   // List of common icons for devices
   List<IconData> _getCommonIcons() {
-    return [
-      Icons.lightbulb_outline,
-      Icons.power_outlined,
-      Icons.power_settings_new,
-      Icons.ac_unit_outlined,
-      Icons.tv_outlined,
-      Icons.air_outlined,
-      Icons.device_thermostat,
-      Icons.kitchen,
-      Icons.water_drop_outlined,
-      Icons.microwave_outlined,
-      Icons.coffee_maker_outlined,
-      Icons.speaker_outlined,
-      Icons.computer_outlined,
-      Icons.router_outlined,
-      Icons.videogame_asset_outlined,
-      Icons.camera_outlined,
-      Icons.shower_outlined,
-      Icons.local_laundry_service_outlined,
-      Icons.devices_other_outlined,
+    return const [
+      Icons.light, Icons.tv, Icons.power, Icons.kitchen,
+          Icons.speaker, Icons.laptop, Icons.ac_unit, Icons.microwave,Icons.coffee_maker,Icons.radio_button_checked,
+          Icons.thermostat,Icons.doorbell,Icons.camera,Icons.sensor_door,Icons.lock,Icons.door_sliding,Icons.local_laundry_service,
+          Icons.dining,Icons.rice_bowl,Icons.wind_power,Icons.router,Icons.outdoor_grill,Icons.air,Icons.alarm,
+      
     ];
   }
 
@@ -707,16 +786,23 @@ class DeviceInfoScreenState extends State<DeviceInfoScreen> {
         backgroundColor: const Color(0xFFE9E7E6), // Match scaffold background
         elevation: 0, // No shadow
         leading: IconButton(
-          icon: Icon(Icons.arrow_back, size: 30, color: Colors.black), // Adjusted size for visibility
+          icon: Transform.translate(
+        offset: Offset(5, 0),
+          child: Icon(Icons.arrow_back, size: 50, color: Colors.black), 
+          ),// Adjusted size for visibility
           onPressed: () => Navigator.of(context).pop(),
         ),
-        title: Text(
+      
+         title: Transform.translate(
+      offset: Offset(2, 5),
+        child: Text(
           _currentDeviceName,
           style: GoogleFonts.jaldi(
             textStyle: TextStyle(fontSize: 23, fontWeight: FontWeight.bold, color: Colors.black),
           ),
           overflow: TextOverflow.ellipsis,
         ),
+         ),
         actions: [
           _isRefreshing
               ? Padding(
@@ -724,7 +810,10 @@ class DeviceInfoScreenState extends State<DeviceInfoScreen> {
                   child: SizedBox(width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.black)),
                 )
               : IconButton(
-                  icon: Icon(Icons.refresh, color: Colors.black),
+                     icon: Transform.translate(
+                offset: Offset(-20, 5), 
+                  child: Icon(Icons.refresh, color: Colors.black, size: 30,),
+                     ),
                   onPressed: _handleRefresh,
                 ),
         ],
@@ -809,7 +898,7 @@ class DeviceInfoScreenState extends State<DeviceInfoScreen> {
                   ),
                 // Energy Usage
                 Transform.translate(
-                  offset: Offset(0, -30),
+                  offset: Offset(0, 5),
                   child: Row( // Use Row to place text and icon side-by-side
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
@@ -833,6 +922,7 @@ class DeviceInfoScreenState extends State<DeviceInfoScreen> {
                   ),
                 ),
                 // Energy Stats
+                SizedBox(height: 20),
                 Transform.translate(
                   offset: Offset(0, -15),
                   child: _isLoadingUsage
@@ -858,7 +948,7 @@ class DeviceInfoScreenState extends State<DeviceInfoScreen> {
                         ),
                 ),
                  Transform.translate(
-                  offset: Offset(0, -15),
+                  offset: Offset(0, -9),
                   child: _buildEnergyStatCard(
                     title: "Estimated Cost",
                     value: "₱${(_totalElectricityCost).toStringAsFixed(2)}", // Display fetched kwhrcost
@@ -866,9 +956,11 @@ class DeviceInfoScreenState extends State<DeviceInfoScreen> {
                     icon: Icons.attach_money,
                   ),
                 ),
+              
                 // Removed the else block that displayed daily and total usage
+                 
                 Container( // Removed Transform.translate
-                    margin: const EdgeInsets.only(bottom: 10, top: 10), // Added top margin
+                    margin: const EdgeInsets.only(bottom: 0, top: 0), // Added top margin
                     padding: EdgeInsets.all(16),
                     decoration: BoxDecoration(
                       color: Colors.white,
@@ -881,8 +973,10 @@ class DeviceInfoScreenState extends State<DeviceInfoScreen> {
                         ),
                       ],
                     ),
+                    
                     child: Row(
                       children: [
+
                         Container(
                           padding: EdgeInsets.all(10),
                           decoration: BoxDecoration(
@@ -934,13 +1028,26 @@ class DeviceInfoScreenState extends State<DeviceInfoScreen> {
                   onPressed: () {
                     // Navigate to the detailed usage screen
                     Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => OverallDetailedUsageScreen(
-                          selectedPeriod: _selectedPeriod.toLowerCase(), // Pass the selected period in lowercase
-                        ),
-                      ),
-                    );
+  context,
+  MaterialPageRoute(
+    builder: (context) {
+      final userId = _auth.currentUser?.uid;
+      if (userId == null) {
+        // Handle the case where the user is not logged in,
+        // though this is unlikely if they are on this screen.
+        // You could return a placeholder widget or show an error.
+        return Scaffold(
+          appBar: AppBar(title: Text("Error")),
+          body: Center(child: Text("User not logged in.")),
+        );
+      }
+      return DeviceUsage(
+        userId: userId,
+        applianceId: widget.applianceId,
+      );
+    },
+  ),
+);
                   },
                   child: Text(
                     'View Detailed Usage',
@@ -950,8 +1057,7 @@ class DeviceInfoScreenState extends State<DeviceInfoScreen> {
                     ),
                   ),
                 ),
-                SizedBox(height: 24), // Add spacing after the button
-                // Editing Section
+                SizedBox(height: 24), 
                 Text(
                   "Appliance Details",
                   style: TextStyle(
@@ -960,18 +1066,27 @@ class DeviceInfoScreenState extends State<DeviceInfoScreen> {
                   ),
                 ),
                 SizedBox(height: 16),
+                
+                
                 TextField(
-
-                  controller: _nameController,
+                  controller: TextEditingController(text: _currentDeviceName),
+                  enabled: false, 
                   decoration: InputDecoration(
                     filled: true,
                     fillColor: Colors.white,
                     labelText: 'Appliance Name',
                     labelStyle: GoogleFonts.jaldi(
+                      color: Colors.black,
                       fontSize: 20,
-
                     ),
-                     border: OutlineInputBorder(),
+                    border: OutlineInputBorder(),
+                    disabledBorder: OutlineInputBorder(
+                      borderSide: BorderSide(color: Colors.black),
+                    ),
+                  ),
+                  style: GoogleFonts.jaldi(
+                    fontSize: 20,
+                    color: Colors.black87,
                   ),
                 ),
 
@@ -1436,7 +1551,7 @@ class DeviceInfoScreenState extends State<DeviceInfoScreen> {
 
       if (mounted) { // Check mounted before showing SnackBar
          ScaffoldMessenger.of(context).showSnackBar(
-           SnackBar(content: Text('${_currentDeviceName} usage data refreshed!')),
+           SnackBar(content: Text('$_currentDeviceName usage data refreshed!')),
          );
       }
     } catch (e, s) {
@@ -1466,4 +1581,4 @@ extension StringExtension on String {
 
 // Removed _fetchLatestDailyUsage, sumallkwh, and sumallkwhr methods as they used the old path structure
 // and their functionality is either covered by _calculateTotalUsageForPeriod (for display)
-// or handled by UsageService (for calculation and storage).
+// or handled by UsageService (for calculation and storage)
