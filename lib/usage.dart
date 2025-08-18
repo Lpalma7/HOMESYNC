@@ -78,48 +78,92 @@ class UsageService {
     double kwhrRate = DEFAULT_KWHR_RATE,
   }) async {
     DateTime now = DateTime.now();
-    String timeStr = DateFormat('HH:mm:ss').format(now); 
-    print("DEBUG: handleApplianceToggle - Formatted timeStr for storage: $timeStr (isOn: $isOn)");
-
+    String timeStr = DateFormat('HH:mm:ss').format(now);
     String dailyPathForEvent = _getApplianceDailyPath(userId, applianceId, now);
-    DocumentReference currentActionDailyDocRef = _firestore.doc(dailyPathForEvent);
+    DocumentReference dailyDocRef = _firestore.doc(dailyPathForEvent);
     DocumentReference mainApplianceDocRef = _firestore.collection('users').doc(userId).collection('appliances').doc(applianceId);
 
-    if (isOn) {
-      print('DEBUG: Attempting to set usagetimeon for path: ${currentActionDailyDocRef.path} with time: $timeStr');
-      try {
-        await currentActionDailyDocRef.set({
-          'usagetimeon': FieldValue.arrayUnion([timeStr]),
-          'last_event_timestamp': FieldValue.serverTimestamp(),
-          'wattage': wattage,
-          'kwhr_rate': kwhrRate,
-        }, SetOptions(merge: true));
-        print('DEBUG: Successfully set usagetimeon for path: ${currentActionDailyDocRef.path}');
-      } catch (e) {
-        print('DEBUG: ERROR setting usagetimeon for path ${currentActionDailyDocRef.path}: $e');
+    try {
+      await _firestore.runTransaction((transaction) async {
+        DocumentSnapshot dailyDoc = await transaction.get(dailyDocRef);
+
+        if (!dailyDoc.exists) {
+          // If the document doesn't exist, create it.
+          if (isOn) {
+            transaction.set(dailyDocRef, {
+              'usagetimeon': [timeStr],
+              'usagetimeoff': [],
+              'last_event_timestamp': FieldValue.serverTimestamp(),
+              'wattage': wattage,
+              'kwhr_rate': kwhrRate,
+              'kwh': 0.0,
+              'kwhrcost': 0.0,
+            });
+          } else {
+            // This is an edge case: turning off a device for which no daily doc exists.
+            // This implies a session started on a previous day.
+            // The calculation logic already looks back in time, so we just record the off event.
+            transaction.set(dailyDocRef, {
+              'usagetimeon': [],
+              'usagetimeoff': [timeStr],
+              'last_event_timestamp': FieldValue.serverTimestamp(),
+              'wattage': wattage,
+              'kwhr_rate': kwhrRate,
+              'kwh': 0.0,
+              'kwhrcost': 0.0,
+            });
+          }
+        } else {
+          // Document exists, so we update it.
+          Map<String, dynamic> data = dailyDoc.data() as Map<String, dynamic>;
+          List<String> usageTimeOn = List<String>.from(data['usagetimeon'] ?? []);
+          List<String> usageTimeOff = List<String>.from(data['usagetimeoff'] ?? []);
+
+          if (isOn) {
+            // Turning ON: Add the new 'on' time.
+            // Using arrayUnion logic manually to prevent duplicates from rapid toggling.
+            if (!usageTimeOn.contains(timeStr)) {
+              usageTimeOn.add(timeStr);
+            }
+            transaction.update(dailyDocRef, {
+              'usagetimeon': usageTimeOn,
+              'last_event_timestamp': FieldValue.serverTimestamp(),
+              'wattage': wattage,
+              'kwhr_rate': kwhrRate,
+            });
+          } else {
+            // Turning OFF: Add the new 'off' time.
+            if (!usageTimeOff.contains(timeStr)) {
+              usageTimeOff.add(timeStr);
+            }
+            transaction.update(dailyDocRef, {
+              'usagetimeoff': usageTimeOff,
+              'last_event_timestamp': FieldValue.serverTimestamp(),
+            });
+          }
+        }
+      });
+
+      print("Transaction successful for appliance $applianceId, isOn: $isOn");
+
+      // Operations to perform after the transaction is successful
+      if (isOn) {
+        await mainApplianceDocRef.update({'last_live_calc_timestamp': now});
+        print('Appliance $applianceId ON. Doc: $dailyPathForEvent, Time: $timeStr');
+      } else {
+        print('Appliance $applianceId OFF. Doc: $dailyPathForEvent, Time: $timeStr');
+        await _calculateAndRecordUsageForCompletedSession(
+          userId: userId, applianceId: applianceId, wattage: wattage, kwhrRate: kwhrRate, offTime: now,
+        );
       }
-      await mainApplianceDocRef.update({'last_live_calc_timestamp': now});
-      print('Appliance $applianceId ON. Doc: $dailyPathForEvent, Time: $timeStr');
-    } else {
-      print('DEBUG: Attempting to set usagetimeoff for path: ${currentActionDailyDocRef.path} with time: $timeStr');
-      try {
-        await currentActionDailyDocRef.set({
-          'usagetimeoff': FieldValue.arrayUnion([timeStr]),
-          'last_event_timestamp': FieldValue.serverTimestamp(),
-          'wattage': wattage,
-          'kwhr_rate': kwhrRate,
-        }, SetOptions(merge: true));
-        print('DEBUG: Successfully set usagetimeoff for path: ${currentActionDailyDocRef.path}');
-      } catch (e) {
-        print('DEBUG: ERROR setting usagetimeoff for path ${currentActionDailyDocRef.path}: $e');
-      }
-      print('Appliance $applianceId OFF. Doc: $dailyPathForEvent, Time: $timeStr');
-      await _calculateAndRecordUsageForCompletedSession(
-        userId: userId, applianceId: applianceId, wattage: wattage, kwhrRate: kwhrRate, offTime: now,
-      );
+      // Trigger aggregations and total updates after the state change is confirmed.
+      await _triggerAggregationsForAppliance(userId, applianceId, kwhrRate, now);
+      await updateAllAppliancesTotalUsage(userId: userId, kwhrRate: kwhrRate, referenceDate: now);
+
+    } catch (e) {
+      print("Error in handleApplianceToggle transaction for appliance $applianceId: $e");
+      // Optionally, add error handling to inform the user.
     }
-    await _triggerAggregationsForAppliance(userId, applianceId, kwhrRate, now);
-    await updateAllAppliancesTotalUsage(userId: userId, kwhrRate: kwhrRate, referenceDate: now);
   }
 
   Future<void> _calculateAndRecordUsageForCompletedSession({

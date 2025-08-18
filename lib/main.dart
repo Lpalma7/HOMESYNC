@@ -25,6 +25,7 @@ import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:homesync/usage.dart';
+import 'package:flutter_background_service_android/flutter_background_service_android.dart';
 // Import DatabaseService
 // Import usage.dart for sumAllAppliancesKwh and sumAllAppliancesKwhr
 // Import FirebaseAuth
@@ -71,6 +72,10 @@ Future<bool> onIosBackground(ServiceInstance service) async {
 
 @pragma('vm:entry-point')
 void onStart(ServiceInstance service) async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await Firebase.initializeApp(
+    options: DefaultFirebaseOptions.currentPlatform,
+  );
   // DartPluginRegistrant.ensureInitialized();
   if (service is AndroidServiceInstance) {
     service.on('setAsForeground').listen((event) {
@@ -95,14 +100,14 @@ void onStart(ServiceInstance service) async {
       }
     }
     print('FLUTTER BACKGROUND SERVICE: ${DateTime.now()}');
-    final FirebaseAuth _auth = FirebaseAuth.instance;
-    final FirebaseFirestore _firestore = FirebaseFirestore.instance;
-    final UsageService _usageService = UsageService();
-    if (_auth.currentUser != null) {
+    final FirebaseAuth auth = FirebaseAuth.instance;
+    final FirebaseFirestore firestore = FirebaseFirestore.instance;
+    final UsageService usageService = UsageService();
+    if (auth.currentUser != null) {
       await ApplianceSchedulingService.initService(
-        auth: _auth,
-        firestore: _firestore,
-        usageService: _usageService,
+        auth: auth,
+        firestore: firestore,
+        usageService: usageService,
       );
     }
   });

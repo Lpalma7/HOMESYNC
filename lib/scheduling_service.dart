@@ -4,6 +4,9 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart'; // For TimeOfDay
 import 'package:homesync/usage.dart'; // Assuming UsageService is here
 import 'package:intl/intl.dart'; // For date formatting (day of week)
+import 'package:timezone/data/latest.dart' as tz;
+import 'package:timezone/timezone.dart' as tz;
+import 'package:homesync/usage.dart';
 
 class ApplianceSchedulingService {
   final FirebaseFirestore _firestore;
@@ -57,6 +60,7 @@ class ApplianceSchedulingService {
   }
 
   Future<void> initialize() async {
+    tz.initializeTimeZones();
     // This is now an instance method called by initService
     final user = _auth.currentUser;
     if (user == null) {
@@ -138,11 +142,16 @@ class ApplianceSchedulingService {
     return null;
   }
 
+  int _timeOfDayToMinutes(TimeOfDay tod) {
+    return tod.hour * 60 + tod.minute;
+  }
+
   void _checkSchedules(Timer timer) async {
     final user = _auth.currentUser;
     if (user == null) return;
 
-    DateTime now = DateTime.now();
+    final location = tz.getLocation('Asia/Manila');
+    final now = tz.TZDateTime.now(location);
     String currentDayName = _getCurrentDayName(now);
     TimeOfDay currentTime = TimeOfDay.fromDateTime(now);
 
@@ -191,69 +200,63 @@ class ApplianceSchedulingService {
 
       bool isScheduledDay = scheduledDays.contains(currentDayName);
 
-      if (!isScheduledDay) {
-        continue; // Not scheduled for today
+      if (!isScheduledDay || scheduledStartTime == null || scheduledEndTime == null) {
+        continue; // Skip if not scheduled for today or if times are invalid
       }
 
-      // --- Auto-ON Logic ---
-      if (scheduledStartTime != null && currentApplianceStatus == 'OFF') {
-        if (currentTime.hour == scheduledStartTime.hour && currentTime.minute == scheduledStartTime.minute) {
-          if (_manualOffOverrides.containsKey(applianceId)) {
-            // Active manual OFF override for this appliance's current scheduled period
-            print("SchedulingService: Auto-ON for $applianceId skipped due to active manual OFF override.");
-          } else {
-            print("SchedulingService: Auto-ON triggered for $applianceId");
-            String? relayKey = applianceDetails['relay'] as String?;
-            if (relayKey != null && relayKey.isNotEmpty) {
-              print("SchedulingService: Updating relay $relayKey state to 1 (ON) for $applianceId");
-              await _firestore.collection('users').doc(user.uid).collection('relay_states').doc(relayKey).set({'state': 1}, SetOptions(merge: true));
-            } else {
-              print("SchedulingService: No relayKey for $applianceId, cannot update relay state directly for Auto-ON.");
-            }
-            // It's important that handleApplianceToggle is called AFTER the relay state might have changed,
-            // or that handleApplianceToggle itself also ensures the main applianceStatus field is updated.
-            // The current handleApplianceToggle in usage.dart does not directly update the main applianceStatus.
-            // This needs to be coordinated. For now, we assume UI listens to relay_state.
-            // The toggle function will handle usage recording.
-            await _usageService.handleApplianceToggle(
-              userId: user.uid,
-              applianceId: applianceId,
-              isOn: true,
-              wattage: applianceDetails['wattage'],
-              kwhrRate: kwhrRate, 
-            );
-             // Ensure main appliance document reflects the ON status
-            await _firestore.collection('users').doc(user.uid).collection('appliances').doc(applianceId).update({'applianceStatus': 'ON'});
-            print("SchedulingService: Updated applianceStatus to ON for $applianceId in main doc.");
-          }
-        }
+      int nowInMinutes = _timeOfDayToMinutes(currentTime);
+      int startInMinutes = _timeOfDayToMinutes(scheduledStartTime);
+      int endInMinutes = _timeOfDayToMinutes(scheduledEndTime);
+
+      bool shouldBeOn;
+      if (startInMinutes <= endInMinutes) {
+        // Schedule is on the same day (e.g., 08:00 to 17:00)
+        shouldBeOn = nowInMinutes >= startInMinutes && nowInMinutes < endInMinutes;
+      } else {
+        // Schedule spans midnight (e.g., 22:00 to 02:00)
+        shouldBeOn = nowInMinutes >= startInMinutes || nowInMinutes < endInMinutes;
       }
 
-      // --- Auto-OFF Logic ---
-      if (scheduledEndTime != null && currentApplianceStatus == 'ON') {
-        if (currentTime.hour == scheduledEndTime.hour && currentTime.minute == scheduledEndTime.minute) {
-          print("SchedulingService: Auto-OFF triggered for $applianceId");
-          String? relayKey = applianceDetails['relay'] as String?;
-          if (relayKey != null && relayKey.isNotEmpty) {
-            print("SchedulingService: Updating relay $relayKey state to 0 (OFF) for $applianceId");
-            await _firestore.collection('users').doc(user.uid).collection('relay_states').doc(relayKey).set({'state': 0}, SetOptions(merge: true));
-          } else {
-            print("SchedulingService: No relayKey for $applianceId, cannot update relay state directly for Auto-OFF.");
-          }
-          await _usageService.handleApplianceToggle(
-            userId: user.uid,
-            applianceId: applianceId,
-            isOn: false,
-            wattage: applianceDetails['wattage'],
-            kwhrRate: kwhrRate,
-          );
-          // Ensure main appliance document reflects the OFF status
-          await _firestore.collection('users').doc(user.uid).collection('appliances').doc(applianceId).update({'applianceStatus': 'OFF'});
-          print("SchedulingService: Updated applianceStatus to OFF for $applianceId in main doc.");
-          _manualOffOverrides.remove(applianceId); 
+      // --- State-based ON/OFF Logic ---
+      if (shouldBeOn && currentApplianceStatus == 'OFF') {
+        // Condition to turn ON
+        if (_manualOffOverrides.containsKey(applianceId)) {
+          print("SchedulingService: Auto-ON for $applianceId skipped due to active manual OFF override.");
+        } else {
+          print("SchedulingService: Turning ON $applianceId as per schedule.");
+          await _setApplianceState(user.uid, applianceId, true, applianceDetails, kwhrRate);
         }
+      } else if (!shouldBeOn && currentApplianceStatus == 'ON') {
+        // Condition to turn OFF
+        print("SchedulingService: Turning OFF $applianceId as per schedule.");
+        await _setApplianceState(user.uid, applianceId, false, applianceDetails, kwhrRate);
+        _manualOffOverrides.remove(applianceId); // Clear any override when schedule ends
       }
     }
+  }
+
+  Future<void> _setApplianceState(String userId, String applianceId, bool isOn, Map<String, dynamic> applianceDetails, double kwhrRate) async {
+    String status = isOn ? 'ON' : 'OFF';
+    int relayState = isOn ? 1 : 0;
+    String? relayKey = applianceDetails['relay'] as String?;
+
+    if (relayKey != null && relayKey.isNotEmpty) {
+      print("SchedulingService: Updating relay $relayKey state to $relayState for $applianceId");
+      await _firestore.collection('users').doc(userId).collection('relay_states').doc(relayKey).set({'state': relayState}, SetOptions(merge: true));
+    } else {
+      print("SchedulingService: No relayKey for $applianceId, cannot update relay state directly.");
+    }
+
+    await _usageService.handleApplianceToggle(
+      userId: userId,
+      applianceId: applianceId,
+      isOn: isOn,
+      wattage: applianceDetails['wattage'],
+      kwhrRate: kwhrRate,
+    );
+
+    await _firestore.collection('users').doc(userId).collection('appliances').doc(applianceId).update({'applianceStatus': status});
+    print("SchedulingService: Updated applianceStatus to $status for $applianceId in main doc.");
   }
 
   // Called from UI when user confirms manual OFF during a scheduled ON period
