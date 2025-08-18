@@ -471,26 +471,24 @@ class DevicesScreenState extends State<DevicesScreen> {
     TimeOfDay? scheduledEndTime = _parseTime(endTimeStr);
     bool isScheduledToday = scheduledDays.contains(currentDayName);
 
-    if (intendedNewStatusFlag == true) { // User wants to turn ON
-      if (isScheduledToday && scheduledEndTime != null && scheduledStartTime != null) {
-        double currentMinutes = currentTime.hour * 60.0 + currentTime.minute;
-        double endMinutes = scheduledEndTime.hour * 60.0 + scheduledEndTime.minute;
-        double startMinutes = scheduledStartTime.hour * 60.0 + scheduledStartTime.minute;
-        bool isAfterScheduledEnd = (startMinutes <= endMinutes) ? (currentMinutes > endMinutes) : (currentMinutes > endMinutes && currentMinutes < startMinutes);
-        if (isAfterScheduledEnd) {
-             proceedWithToggle = await _showScheduleConfirmationDialog(
-                title: 'Confirm Action',
-                content: 'The scheduled ON time for $applianceName has ended for today. Are you sure you want to turn it ON?',
-             );
+    if (isScheduledToday && scheduledStartTime != null && scheduledEndTime != null) {
+      double currentMinutes = currentTime.hour * 60.0 + currentTime.minute;
+      double startMinutes = scheduledStartTime.hour * 60.0 + scheduledStartTime.minute;
+      double endMinutes = scheduledEndTime.hour * 60.0 + scheduledEndTime.minute;
+
+      bool isWithinScheduledPeriod = (startMinutes <= endMinutes)
+          ? (currentMinutes >= startMinutes && currentMinutes < endMinutes)
+          : (currentMinutes >= startMinutes || currentMinutes < endMinutes);
+
+      if (intendedNewStatusFlag == true) { // User wants to turn ON
+        if (!isWithinScheduledPeriod) {
+          proceedWithToggle = await _showScheduleConfirmationDialog(
+            title: 'Confirm Action',
+            content: '$applianceName is not within its scheduled ON time. Are you sure you want to turn it ON?',
+          );
         }
-      }
-    } else { // User wants to turn OFF
-      if (isScheduledToday && scheduledStartTime != null && scheduledEndTime != null) {
-        double currentMinutes = currentTime.hour * 60.0 + currentTime.minute;
-        double startMinutes = scheduledStartTime.hour * 60.0 + scheduledStartTime.minute;
-        double endMinutes = scheduledEndTime.hour * 60.0 + scheduledEndTime.minute;
-        bool withinScheduledOnPeriod = (startMinutes <= endMinutes) ? (currentMinutes >= startMinutes && currentMinutes < endMinutes) : (currentMinutes >= startMinutes || currentMinutes < endMinutes);
-        if (withinScheduledOnPeriod) {
+      } else { // User wants to turn OFF
+        if (isWithinScheduledPeriod) {
           proceedWithToggle = await _showScheduleConfirmationDialog(
             title: 'Confirm Action',
             content: '$applianceName is currently within its scheduled ON time. Are you sure you want to turn it OFF?',
